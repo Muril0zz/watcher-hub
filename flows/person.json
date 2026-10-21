@@ -1,0 +1,102 @@
+{
+  "tlid": 101,
+  "ctd": 101,
+  "tn": "Person detected",
+  "type": 0,
+  "task_flow": [
+    {
+      "id": 1,
+      "type": "ai camera",
+      "index": 0,
+      "version": "1.0.0",
+      "params": {
+        "model_type": 1,
+        "modes": 0,
+        "model": {
+          "arguments": {
+            "iou": 45,
+            "conf": 65
+          }
+        },
+        "conditions": [
+          {
+            "class": "person",
+            "mode": 1,
+            "type": 2,
+            "num": 0
+          }
+        ],
+        "conditions_combo": 0,
+        "silent_period": {
+          "silence_duration": 5
+        },
+        "output_type": 0,
+        "shutter": 0
+      },
+      "wires": [
+        [
+          2
+        ]
+      ]
+    },
+    {
+      "id": 2,
+      "type": "alarm trigger",
+      "index": 1,
+      "version": "1.0.0",
+      "params": {
+        "text": "Person detected",
+        "audio": ""
+      },
+      "wires": [
+        [
+          3,
+          4,
+          5
+        ]
+      ]
+    },
+    {
+      "id": 3,
+      "type": "http alarm",
+      "index": 2,
+      "version": "1.0.0",
+      "params": {
+        "silence_duration": 5,
+        "time_en": 1,
+        "text_en": 1,
+        "image_en": 1,
+        "sensor_en": 1,
+        "text": "Person detected"
+      },
+      "wires": []
+    },
+    {
+      "id": 4,
+      "type": "uart alarm",
+      "index": 3,
+      "version": "1.0.0",
+      "params": {
+        "output_format": 1,
+        "text": "Person detected",
+        "include_big_image": false,
+        "include_small_image": false
+      },
+      "wires": []
+    },
+    {
+      "id": 5,
+      "type": "local alarm",
+      "index": 4,
+      "version": "1.0.0",
+      "params": {
+        "sound": 1,
+        "rgb": 1,
+        "img": 0,
+        "text": 0,
+        "duration": 1
+      },
+      "wires": []
+    }
+  ]
+}
