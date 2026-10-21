@@ -12,6 +12,9 @@ Opens a virtual serial port that mimics the `SenseCAP>` console
 With --push, every loaded task flow that contains an "http alarm" block
 makes the fake device POST a fake alarm (same JSON as the real firmware)
 to <url>/v1/notification/event every --every seconds.
+
+With --say "move the arm up", the console also logs that push-to-talk
+transcript every --every seconds (for receiver.py --voice).
 """
 import argparse
 import base64
@@ -77,9 +80,12 @@ def console(master: int) -> None:
 
     while True:
         buf += os.read(master, 65536)
-        while b"\n" in buf:
-            raw, buf = buf.split(b"\n", 1)
-            line = raw.strip(b"\r").decode(errors="replace")
+        # Like the real console, "\r" and "\n" each end a line, so "cmd\r\n" leaves
+        # an empty line behind that the JSON prompt consumes as the taskflow.
+        while b"\r" in buf or b"\n" in buf:
+            cut = min(i for i in (buf.find(b"\r"), buf.find(b"\n")) if i >= 0)
+            raw, buf = buf[:cut], buf[cut + 1:]
+            line = raw.decode(errors="replace")
             if want_json:
                 want_json = False
                 try:
@@ -87,7 +93,7 @@ def console(master: int) -> None:
                     out(line + "\r\nI (1) app_cmd: taskflow import from json success!\r\nSenseCAP> ")
                     print(f"[fake] task flow loaded: {state['flow'].get('tn')}", flush=True)
                 except json.JSONDecodeError:
-                    out("E (1) taskflow: json parse failed\r\nSenseCAP> ")
+                    out("E (1) taskflow: Failed to parse cJSON\r\nSenseCAP> ")
                 continue
             if line == "taskflow -i -j":
                 out("Please input taskflow json:\r\n")
@@ -98,7 +104,7 @@ def console(master: int) -> None:
                 else:
                     out("E (1) app_cmd: taskflow is not running, export fail!\r\nSenseCAP> ")
             elif line == "battery":
-                out("battery: 87\r\nSenseCAP> ")
+                out("I (1) BSP: voltage: 4169mV\r\nI (1) BSP: percentage: 87%\r\nbattery percentage: 87%\r\nSenseCAP> ")
             elif line.startswith("rgb"):
                 out("SenseCAP> ")
                 print(f"[fake] {line}", flush=True)
@@ -109,16 +115,26 @@ def console(master: int) -> None:
                 out("SenseCAP> ")
 
 
+def speaker(master: int, text: str, every: float) -> None:
+    # Same shape as the real push-to-talk log line (green ANSI colour included).
+    while True:
+        time.sleep(every)
+        os.write(master, f"\x1b[0;32mI (1) vi: sst_text: {text}\x1b[0m\r\n".encode())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--push", help="receiver base URL, e.g. http://127.0.0.1:8887")
     ap.add_argument("--every", type=float, default=5.0)
+    ap.add_argument("--say", help="log this push-to-talk transcript every --every seconds")
     a = ap.parse_args()
     master, slave = pty.openpty()
     print(f"Fake Watcher console on {os.ttyname(slave)}", flush=True)
     if a.push:
         threading.Thread(target=pusher, args=(a.push, a.every), daemon=True).start()
         print(f"Pushing alarms to {a.push} every {a.every}s once an http-alarm flow is loaded", flush=True)
+    if a.say:
+        threading.Thread(target=speaker, args=(master, a.say, a.every), daemon=True).start()
     try:
         console(master)
     except KeyboardInterrupt:

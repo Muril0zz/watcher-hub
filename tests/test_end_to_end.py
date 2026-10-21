@@ -67,7 +67,7 @@ class EndToEnd(unittest.TestCase):
         return r.stdout
 
     def test_battery(self):
-        self.assertIn("battery: 87", self._control("battery"))
+        self.assertIn("battery percentage: 87%", self._control("battery"))
 
     def test_load_gesture_and_receive_alarm(self):
         out = self._control("load", "gesture")
@@ -88,6 +88,65 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(evt["text"], "Open palm: help requested")
         self.assertEqual(evt["sensor"]["CO2"], 612)
         self.assertTrue(os.path.exists(os.path.join(self.tmp, evt["image_path"])))
+
+    def test_add_http_to_voice_task(self):
+        # Shape of a task created by voice: cloud model, MP3 audio, no http alarm.
+        voice = {"tlid": 1, "ctd": 1, "tn": "Alert: Spotting Someone Nearby", "type": 3,
+                 "task_flow": [
+                     {"id": 10, "type": "ai camera", "index": 0, "params": {"model_type": 0}, "wires": [[20]]},
+                     {"id": 20, "type": "alarm trigger", "index": 1,
+                      "params": {"text": "Someone detected", "audio": "A" * 56000}, "wires": [[30]]},
+                     {"id": 30, "type": "sensecraft alarm", "index": 2,
+                      "params": {"silence_duration": 10, "text": "Someone detected"}, "wires": []}]}
+        path = os.path.join(self.tmp, "voice.json")
+        with open(path, "w") as f:
+            json.dump(voice, f)
+        self.assertIn("import from json success", self._control("load", path))
+
+        self.assertIn("import from json success", self._control("add-http"))
+        self.assertIn("already has an http alarm", self._control("add-http"))
+
+        log = os.path.join(self.tmp, "data", "events.jsonl")
+        for _ in range(60):
+            if os.path.exists(log) and os.path.getsize(log) > 0:
+                break
+            time.sleep(0.1)
+        else:
+            self.fail("no alarm received")
+        with open(log) as f:
+            self.assertEqual(json.loads(f.readline())["text"], "Someone detected")
+
+
+class Voice(unittest.TestCase):
+    def test_voice_command(self):
+        tmp = tempfile.mkdtemp()
+        fake = subprocess.Popen(
+            [PY, "-u", os.path.join(ROOT, "tools", "fake_watcher.py"),
+             "--say", "Move the arm to the left.", "--every", "0.5"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        serial_port = fake.stdout.readline().strip().split()[-1]
+        receiver = subprocess.Popen(
+            [PY, os.path.join(ROOT, "watcher", "receiver.py"), "--host", "127.0.0.1",
+             "--port", str(free_port()), "--voice", serial_port],
+            cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        try:
+            log = os.path.join(tmp, "data", "events.jsonl")
+            for _ in range(60):
+                if os.path.exists(log) and os.path.getsize(log) > 0:
+                    break
+                time.sleep(0.1)
+            else:
+                self.fail("no voice event received")
+            with open(log) as f:
+                evt = json.loads(f.readline())
+            self.assertEqual(evt["source"], "voice")
+            self.assertEqual(evt["command"], "arm_left")
+            self.assertEqual(evt["text"], "Move the arm to the left.")
+        finally:
+            for p in (receiver, fake):
+                p.terminate()
+                p.wait(timeout=5)
+                p.stdout.close()
 
 
 if __name__ == "__main__":

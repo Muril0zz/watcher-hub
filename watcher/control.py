@@ -15,6 +15,7 @@ Usage (pip install pyserial):
   python3 watcher/control.py -p PORT load person    # built-in preset
   python3 watcher/control.py -p PORT load my.json   # your own task flow file
   python3 watcher/control.py -p PORT export         # print the running task flow
+  python3 watcher/control.py -p PORT add-http       # make the running task (e.g. made by voice) push to the receiver
   python3 watcher/control.py -p PORT battery
   python3 watcher/control.py -p PORT rgb 255 0 0    # LED colour
   python3 watcher/control.py -p PORT cmd "help"     # any console command
@@ -85,6 +86,7 @@ def build_flow(model_type: int, cls: str, text: str, conf: int = 65,
 # Serial console helpers
 # --------------------------------------------------------------------------
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+LOG_LINE = re.compile(r"[IWE] \(\d+\) [^\r\n]*\r?\n")
 
 
 class Console:
@@ -116,13 +118,43 @@ class Console:
         payload = json.dumps(flow, separators=(",", ":"))
         self.send("")
         self.read_for(0.3)
-        self.send("taskflow -i -j")
+        # "\r" only: the console ends the line on "\r", and a trailing "\n" would be
+        # read by the JSON prompt as an empty taskflow (parse fails, payload is lost).
+        self.ser.write(b"taskflow -i -j\r")
+        self.ser.flush()
         got = self.read_for(3, until="Please input taskflow json")
         if "Please input taskflow json" not in got:
             raise RuntimeError("Console did not ask for JSON. Wrong port? Output was:\n" + got)
         self.ser.write((payload + "\n").encode())   # firmware reads one line (max 100 KB)
         self.ser.flush()
         return self.read_for(5)
+
+    def export_flow(self) -> dict:
+        self.send("")
+        self.read_for(0.3)
+        self.ser.write(b"taskflow -e\r")
+        self.ser.flush()
+        # Voice/app tasks embed base64 MP3 audio (~60 KB), so wait for the prompt.
+        raw = self.read_for(30, until="\nSenseCAP>")
+        # Device log lines can land in the middle of the JSON; drop them.
+        out = LOG_LINE.sub("", raw)
+        if '{"tlid"' not in out:
+            raise RuntimeError("No running task flow. Output was:\n" + raw)
+        return json.JSONDecoder().raw_decode(out[out.index('{"tlid"'):])[0]
+
+
+def add_http_alarm(flow: dict, silence: int = 5) -> dict:
+    """Wire an "http alarm" block after the flow's "alarm trigger"."""
+    blocks = flow["task_flow"]
+    trigger = next(b for b in blocks if b["type"] == "alarm trigger")
+    hid = max(b["id"] for b in blocks) + 1
+    blocks.append({"id": hid, "type": "http alarm", "index": len(blocks), "version": "1.0.0",
+                   "params": {"silence_duration": silence, "time_en": 1, "text_en": 1,
+                              "image_en": 1, "sensor_en": 1, "text": trigger["params"]["text"]},
+                   "wires": []})
+    trigger["wires"][0].append(hid)
+    flow["tlid"] = flow["ctd"] = int(time.time() * 1000)
+    return flow
 
 
 def main() -> None:
@@ -137,6 +169,8 @@ def main() -> None:
     ld.add_argument("--silence", type=int, default=5, help="seconds between alarms")
     ld.add_argument("--dry-run", action="store_true", help="print the JSON, don't send")
     sub.add_parser("export", help="print the running task flow")
+    ah = sub.add_parser("add-http", help="add an http alarm to the running task (e.g. one made by voice) and reload it")
+    ah.add_argument("--silence", type=int, default=5, help="seconds between alarms")
     sub.add_parser("battery")
     sub.add_parser("reboot")
     rgb = sub.add_parser("rgb", help="set LED colour")
@@ -170,7 +204,13 @@ def main() -> None:
     if a.action == "load":
         print(con.load_flow(flow))
     elif a.action == "export":
-        print(con.cmd("taskflow -e", 3))
+        print(json.dumps(con.export_flow()))
+    elif a.action == "add-http":
+        flow = con.export_flow()
+        if any(b["type"] == "http alarm" for b in flow["task_flow"]):
+            print(f"'{flow['tn']}' already has an http alarm")
+        else:
+            print(con.load_flow(add_http_alarm(flow, a.silence)))
     elif a.action == "battery":
         print(con.cmd("battery"))
     elif a.action == "reboot":

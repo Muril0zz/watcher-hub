@@ -14,6 +14,11 @@ Two modes, matching the two local output channels in the Watcher firmware:
                    USB-serial adapter. Enable "Serial Port / UART Output" on
                    the task. Each alarm arrives as one JSON line ending \\r\\n.
 
+  --voice PORT     Also read the Watcher's USB-C console and turn push-to-talk
+                   transcripts ("move the arm up/down/left/right") into
+                   voice events. Uses the Watcher's SenseCraft speech-to-text;
+                   control.py can't use that port while this runs.
+
 Every event is printed, appended to data/events.jsonl, its image saved to
 data/images/, and passed to on_event() -- put your own logic there
 (forward to the arm / glasses, MQTT, websocket, etc.).
@@ -21,13 +26,16 @@ data/images/, and passed to on_event() -- put your own logic there
 Usage:
   python3 watcher/receiver.py                    # HTTP on 0.0.0.0:8887
   python3 watcher/receiver.py --port 9000 --token secret
+  python3 watcher/receiver.py --voice /dev/cu.usbmodem…3      # + voice commands
   python3 watcher/receiver.py --mode uart --serial /dev/ttyUSB0   # pip install pyserial
 """
 import argparse
 import base64
 import json
 import os
+import re
 import sys
+import threading
 import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -42,7 +50,8 @@ LOG_FILE = os.path.join("data", "events.jsonl")
 def on_event(evt: dict) -> None:
     """Called once per Watcher alarm with a normalized event dict:
     {
-      "source": "http" | "uart",
+      "source": "http" | "uart" | "voice",
+      "command": "arm_up" | "arm_down" | "arm_left" | "arm_right",   # voice only
       "received_at": ISO time on this computer,
       "device_eui": str | None,
       "timestamp_ms": int | None,        # device clock (HTTP only)
@@ -194,6 +203,53 @@ def run_uart(port: str, baud: int) -> None:
             })
 
 
+# --------------------------------------------------------------------------
+# Voice mode  (firmware log over the USB-C console, 115200)
+# After push-to-talk the firmware logs "I (...) vi: sst_text: <transcript>".
+# --------------------------------------------------------------------------
+SST = re.compile(r"vi: sst_text: ?(.*)")
+DIRECTION = re.compile(r"\b(up|down|left|right)\b")
+
+
+def parse_command(text: str) -> str | None:
+    t = text.lower()
+    if "arm" not in t and "move" not in t:
+        return None
+    m = DIRECTION.search(t)
+    return f"arm_{m.group(1)}" if m else None
+
+
+def run_voice(port: str, baud: int) -> None:
+    import serial  # pyserial
+    ser = serial.Serial(port, baud, timeout=1)
+    print(f"Listening for voice commands on {port} (hold the wheel, speak, release)")
+    buf = b""
+    while True:
+        buf += ser.read(ser.in_waiting or 1)
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            m = SST.search(re.sub(r"\x1b\[[0-9;]*m", "", line.decode(errors="replace")))
+            if not m:
+                continue
+            text = m.group(1).strip()
+            command = parse_command(text)
+            if not command:
+                print(f"(voice, not a command) {text!r}", flush=True)
+                continue
+            emit({
+                "source": "voice",
+                "received_at": datetime.now().isoformat(timespec="seconds"),
+                "device_eui": None,
+                "timestamp_ms": int(time.time() * 1000),
+                "text": text,
+                "command": command,
+                "image_path": None,
+                "sensor": {},
+                "inference": {},
+                "raw": {"sst_text": text},
+            })
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Receive SenseCAP Watcher alarms")
     ap.add_argument("--mode", choices=["http", "uart"], default="http")
@@ -202,7 +258,10 @@ if __name__ == "__main__":
     ap.add_argument("--token", default=None, help="require this HTTP Token (optional)")
     ap.add_argument("--serial", default="/dev/ttyUSB0", help="serial device for uart mode")
     ap.add_argument("--baud", type=int, default=115200)
+    ap.add_argument("--voice", metavar="PORT", help="Watcher USB-C console port for voice commands")
     a = ap.parse_args()
+    if a.voice:
+        threading.Thread(target=run_voice, args=(a.voice, a.baud), daemon=True).start()
     if a.mode == "http":
         run_http(a.host, a.port, a.token)
     else:
