@@ -29,6 +29,7 @@ VOICES = {
     "en": ["Samantha", "Flo (Inglês (EUA))", "Albert"],
     "es": ["Monica", "Paulina", "Flo (Espanhol (Espanha))"],
     "hi": ["Lekha"],
+    "yue": ["Sinji"],  # Cantonese (Hong Kong)
 }
 _installed = None
 _current = None
@@ -68,7 +69,8 @@ def speak(text: str, lang: str = "en"):
     global _current
     if _current and _current.poll() is None:
         _current.terminate()
-    voice = next((v for v in VOICES.get(lang[:2], []) if v in _voices()), None)
+    voices = VOICES.get(lang) or VOICES.get(lang[:2], [])  # "yue" before falling back to 2 letters
+    voice = next((v for v in voices if v in _voices()), None)
     cmd = ["say"] + (["-v", voice] if voice else []) + [text]
     _current = subprocess.Popen(cmd)
 

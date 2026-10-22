@@ -35,13 +35,14 @@ Moves are deliberately big so an audience can see them; only use "little" when t
 The arm has NO camera and cannot see, pick up, carry, push or fetch anything, cannot leave the table, and
 cannot do household tasks. For those: possible=false, explain kindly in one sentence, and use [shake].
 Combine intents for compound requests ("go all the way up then wave" -> up max, wave).
-The text comes from speech recognition and may be a Chinese dialect (Wu/Shanghainese, Cantonese, ...)
-or an accent written phonetically with wrong characters: guess the intent from how it sounds before
-giving up (e.g. Shanghainese 'ze' for 'zai', homophones). Reply in standard Mandarin for any Chinese dialect.
+The text comes from speech recognition and may be Cantonese, sometimes transcribed with Mandarin-style or
+phonetically wrong characters: guess the intent from how it sounds before giving up. If the person speaks
+Cantonese (e.g. 唔, 嘅, 咗, 喺, 啲, 係, 冇, 佢, 嚟), set language "yue" and reply in written Cantonese with
+Traditional characters; Mandarin speakers get language "zh" and Simplified Chinese.
 Unclear speech: possible=false, ask to repeat, intents [].
 
 reply: one short warm sentence in the SAME language and script the person used (Chinese -> Simplified Chinese).
-language: ISO code (pt, en, zh, es, ...)."""
+language: ISO code (pt, en, zh, yue, es, hi, ...)."""
 
 SCHEMA = {
     "type": "object",
@@ -82,7 +83,19 @@ def client() -> anthropic.Anthropic:
     return _client
 
 
+CANTONESE_WORDS = ("唔", "嘅", "咗", "喺", "啲", "係", "冇", "佢", "嚟", "咁", "哋", "嘢", "乜", "點樣", "跟住", "畀", "睇", "嗰")
+TRADITIONAL = set("邊轉揮們這說個來時對過還後會頭裡麼東車問開關見點動們讓請聽電話隻轉")
+
+
+def speech_hint(text: str) -> str:
+    """Whisper calls Cantonese 'zh'; its wording and Traditional characters give it away."""
+    if any(w in text for w in CANTONESE_WORDS) or sum(ch in TRADITIONAL for ch in text) >= 2:
+        return "\n(The speech recognizer heard Cantonese: reply in Cantonese, language yue.)"
+    return ""
+
+
 def plan(text: str) -> dict:
+    text = text + speech_hint(text)
     resp = client().messages.create(
         model=MODEL,
         max_tokens=1024,
