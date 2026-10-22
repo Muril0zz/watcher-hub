@@ -45,7 +45,9 @@ LIFT_SPEED_CAP = 45.0  # deg/s on joints that fight gravity (5 V / 3 A supply)
 AUTO_STAND_MAX = 70.0  # shoulder_lift above this (lying forward) is too heavy to lift without a hand
 SPEED_RANGE = (10.0, 160.0)
 PAN_LIMIT, ROLL_LIMIT, WRIST_LIMIT = 110.0, 170.0, 40.0
-FAST_MAX_WORDS = 6  # utterances this short go through the instant keyword path when it understands them
+# Only really short commands take the instant keyword path; anything with more nuance goes to Claude
+# (a 6-word limit let "vá totalmente para a direita" through the parser, which missed "totalmente").
+FAST_MAX_WORDS = 4
 CONTACT_LOAD = 800  # 0..1000: straining this hard without moving = touching something (the table)
 STOP_WORDS = re.compile(r"^\W*(stop|para|pare|parar|chega|basta|alto|停|停下|停止|别动)\W*$", re.IGNORECASE)
 CAMERA_HFOV = 60.0  # degrees, Mac FaceTime camera, approx.

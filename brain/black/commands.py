@@ -76,7 +76,8 @@ def parse(raw: str) -> Parsed:
     amount = "normal"
     if re.search(r"\b(pouco|pouquinho|little|bit|slightly)\b", text):
         amount = "little"
-    if re.search(r"\b(muito|tudo|maximo|todo|all the way|max|bastante)\b", text):
+    if re.search(r"\b(muito|tudo|maximo|todo|toda|totalmente|completamente|total|inteiro|inteira|ate o fim|"
+                 r"ao maximo|o maximo|all the way|max|maximum|fully|completely|bastante)\b", text):
         amount = "max"
     degrees = None
     m = re.search(r"\b(\d{1,3})\s*(graus|grau|degrees|degree|deg)\b", text)
@@ -106,5 +107,7 @@ def parse(raw: str) -> Parsed:
     if out.intents and out.intents[0].name == "goto_color":
         hits = [h for h in hits if h[1] not in ("left", "right", "side", "center", "down")]
     for _, name in sorted(hits):
+        if name == "spin" and amount == "max":
+            name = "roll_full"  # "gira o punho todo" = the full turn, not 90 degrees
         out.intents.append(Intent(name, amount=amount, degrees=degrees))
     return out
