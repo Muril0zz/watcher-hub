@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
@@ -665,8 +666,9 @@ async def api_command(request: Request):
             lang = "en"
         else:
             lang = "pt"
-        return handle_text(text, lang, quiet=True, addressed=True)
-    return handle_text(text)
+        return await run_in_threadpool(handle_text, text, lang, quiet=True, addressed=True)
+    # Claude/Whisper block for seconds: off the event loop so /state and a "stop" still get through
+    return await run_in_threadpool(handle_text, text)
 
 
 @app.post("/audio")
@@ -674,12 +676,12 @@ async def audio(request: Request):
     data = await request.body()
     suffix = ".mp4" if "mp4" in request.headers.get("content-type", "") else ".webm"
     t0 = time.time()
-    text, lang = speech.transcribe(data, suffix)
+    text, lang = await run_in_threadpool(speech.transcribe, data, suffix)
     if not text:
         arm.log(f"whisper {time.time() - t0:.1f}s: noise or silence, ignored")
         return {"heard": "", "intents": [], "say": "", "spoken": True, "ignored": True}
     arm.log(f"whisper {time.time() - t0:.1f}s [{lang}]: {text}")
-    return handle_text(text, lang or "pt")
+    return await run_in_threadpool(handle_text, text, lang or "pt")
 
 
 @app.get("/state")

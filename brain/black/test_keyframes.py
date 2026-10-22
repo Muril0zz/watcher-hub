@@ -14,6 +14,12 @@ CASES = {
     "number 3 down": lambda fr: fr[-1]["wrist"] is not None and fr[-1]["wrist"] < 0,
     "gira o número 4 até o fim": lambda fr: fr[-1]["roll"] is not None and abs(fr[-1]["roll"]) >= 150,
     "faz uma cobrinha": lambda fr: len(fr) >= 4,
+    # the snake must slither forward and low: shoulder forward and forearm stretched in every frame
+    "do a snake": lambda fr: len(fr) >= 6 and all(
+        (f["shoulder"] is None or f["shoulder"] >= 15) and (f["elbow"] is None or f["elbow"] >= -60) for f in fr)
+        and fr[0]["shoulder"] is not None and fr[0]["elbow"] is not None,
+    "make a snake move": lambda fr: len(fr) >= 6 and all(
+        (f["elbow"] is None or f["elbow"] >= -60) for f in fr) and fr[0]["elbow"] is not None,
     "dobra cada articulação uma de cada vez": lambda fr: len(fr) >= 4 and all(
         sum(f[k] is not None for k in RANGES) <= 2 for f in fr),
     "go diagonal, base left and number 1 forward at the same time": lambda fr: any(

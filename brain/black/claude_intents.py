@@ -44,8 +44,11 @@ Moves are deliberately big so an audience can see them; only use "little" when t
     hand = gripper: 0 closed .. 100 open
   "up"/"down" on 1 or 2 raises/lowers that segment; "all the way" = the end of its range; "a bit" ~15 from
   where it is; otherwise ~40% of the range. These ranges are safe (the table is never reached); stay inside them.
-  "Every joint"/"each joint" = all six: base, 1, 2, 3, 4 and hand. "One joint at a time" = each frame changes ONE joint. "Back and forth" = alternate the two ends. A snake =
-  frames where base, 1, 3 and 4 swing in alternating directions. Don't add a final "go back" frame unless asked.
+  "Every joint"/"each joint" = all six: base, 1, 2, 3, 4 and hand. "One joint at a time" = each frame changes ONE joint. "Back and forth" = alternate the two ends. A snake
+  slithers FORWARD, stretched out low and long like a snake on the ground, never with the forearm pointing up:
+  EVERY frame sets number 1 between +20 and +30 and number 2 between -55 and -45, while base swings about
+  +-40, number 3 about +-35 and number 4 about +-60 in alternating directions; 8-12 frames of ~0.6 s.
+  Anything "forward", "reaching" or "towards me" also uses number 1 positive and number 2 near -50. Don't add a final "go back" frame unless asked.
   Requests made only of the simple moves (left, right, up, down, center, wave, open, spin..., also several in a
   row like "all the way right then all the way left") use the simple intents, NOT keyframes. Use keyframes
   when a joint is named or numbered, or for diagonals, snakes, figures, bends, or anything the simple moves can't do.
