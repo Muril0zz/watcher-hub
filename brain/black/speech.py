@@ -35,16 +35,41 @@ _installed = None
 _current = None
 
 
+# Phrases Whisper is known to invent from noise or silence (trained on subtitled videos).
+HALLUCINATIONS = {
+    "thank you", "thank you.", "thanks for watching", "thanks for watching!", "you", "bye", "bye.",
+    "obrigado", "obrigado.", "obrigada", "tchau", "legendas pela comunidade amara.org",
+    "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目", "字幕由amara.org社区提供", "谢谢观看", "谢谢", "謝謝",
+    "ご視聴ありがとうございました", "sous-titres réalisés para la communauté d'amara.org",
+}
+MIN_SECONDS = 0.4
+MIN_RMS = 0.006  # quieter than this the clip is room noise, not someone talking into the mic
+
+
 def transcribe(audio: bytes, suffix: str = ".webm") -> tuple[str, str]:
-    """(text, language code) for a recorded clip in any format ffmpeg reads."""
+    """(text, language) for a recorded clip, or ("", lang) when it is noise, silence or a known
+    Whisper hallucination, so the arm never acts on it."""
     import mlx_whisper  # slow import: only when audio actually arrives
+    import numpy as np
+    from mlx_whisper.audio import load_audio
 
     with tempfile.NamedTemporaryFile(suffix=suffix) as f:
         f.write(audio)
         f.flush()
-        out = mlx_whisper.transcribe(f.name, path_or_hf_repo=WHISPER_MODEL, condition_on_previous_text=False,
-                                     temperature=0.0)
-    return out["text"].strip(), out.get("language", "")
+        samples = load_audio(f.name)
+    seconds = len(samples) / 16000
+    rms = float(np.sqrt(np.mean(np.square(samples)))) if len(samples) else 0.0
+    if seconds < MIN_SECONDS or rms < MIN_RMS:
+        return "", ""
+    out = mlx_whisper.transcribe(samples, path_or_hf_repo=WHISPER_MODEL, condition_on_previous_text=False,
+                                 temperature=0.0)
+    text, lang = out["text"].strip(), out.get("language", "")
+    segments = out.get("segments") or []
+    if segments and all(seg.get("no_speech_prob", 0) > 0.6 and seg.get("avg_logprob", 0) < -0.8 for seg in segments):
+        return "", lang
+    if text.lower().strip(" .!?。！") in {h.strip(" .!?。！") for h in HALLUCINATIONS}:
+        return "", lang
+    return text, lang
 
 
 def warm_up():

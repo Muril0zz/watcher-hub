@@ -35,11 +35,18 @@ Moves are deliberately big so an audience can see them; only use "little" when t
 The arm has NO camera and cannot see, pick up, carry, push or fetch anything, cannot leave the table, and
 cannot do household tasks. For those: possible=false, explain kindly in one sentence, and use [shake].
 Combine intents for compound requests ("go all the way up then wave" -> up max, wave).
+Slang for "all the way": no talo, até o talo, de vez, até onde der, ao extremo -> amount "max".
+Corrections replace what came before: "esquerda não, direita" / "not left, right" -> only [right].
 The text comes from speech recognition and may be Cantonese, sometimes transcribed with Mandarin-style or
 phonetically wrong characters: guess the intent from how it sounds before giving up. If the person speaks
 Cantonese (e.g. 唔, 嘅, 咗, 喺, 啲, 係, 冇, 佢, 嚟), set language "yue" and reply in written Cantonese with
 Traditional characters; Mandarin speakers get language "zh" and Simplified Chinese.
-Unclear speech: possible=false, ask to repeat, intents [].
+This runs at a busy public event: the microphone also catches side conversations, laughter, other people,
+music and speech-recognition junk ("Thank you.", "Obrigado.", subtitles credits, single random words).
+for_robot=false when the text is NOT a request to the arm (chatting with someone else, comments, noise,
+greetings to other people, unrelated sentences): then intents [] and reply "" and the arm stays silent.
+Be strict: only for_robot=true when it is plausibly an instruction or a question to the robot.
+Unclear speech that does look like it was meant for the robot: possible=false, ask to repeat, intents [].
 
 reply: one short warm sentence in the SAME language and script the person used (Chinese -> Simplified Chinese).
 language: ISO code (pt, en, zh, yue, es, hi, ...)."""
@@ -47,8 +54,9 @@ language: ISO code (pt, en, zh, yue, es, hi, ...)."""
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["language", "possible", "reply", "intents"],
+    "required": ["for_robot", "language", "possible", "reply", "intents"],
     "properties": {
+        "for_robot": {"type": "boolean"},
         "language": {"type": "string"},
         "possible": {"type": "boolean"},
         "reply": {"type": "string"},

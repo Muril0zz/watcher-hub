@@ -29,7 +29,7 @@ RULES = [
     ("side", ["lado", "side"]),
     ("up", ["cima", "sobe", "suba", "levanta", "alto", "ceu", "up", "raise", "higher"]),
     ("down", ["baixo", "desce", "desca", "abaixa", "down", "lower"]),
-    ("open", ["abre", "abra", "abrir", "open"]),
+    ("open", ["abre", "abra", "abrir", "open", "solta", "larga", "release", "let go"]),
     ("close", ["fecha", "feche", "fechar", "close", "grab", "pega"]),
     ("spin", ["gira", "roda", "girar", "spin", "rotate", "twist"]),
     ("nod", ["sim", "yes", "nod", "concorda"]),
@@ -77,7 +77,8 @@ def parse(raw: str) -> Parsed:
     if re.search(r"\b(pouco|pouquinho|little|bit|slightly)\b", text):
         amount = "little"
     if re.search(r"\b(muito|tudo|maximo|todo|toda|totalmente|completamente|total|inteiro|inteira|ate o fim|"
-                 r"ao maximo|o maximo|all the way|max|maximum|fully|completely|bastante)\b", text):
+                 r"ao maximo|o maximo|no talo|de vez|ao extremo|la pro alto|la em cima|la embaixo|no alto|"
+                 r"all the way|max|maximum|fully|completely|bastante)\b", text):
         amount = "max"
     degrees = None
     m = re.search(r"\b(\d{1,3})\s*(graus|grau|degrees|degree|deg)\b", text)
@@ -106,6 +107,9 @@ def parse(raw: str) -> Parsed:
             break
     if out.intents and out.intents[0].name == "goto_color":
         hits = [h for h in hits if h[1] not in ("left", "right", "side", "center", "down")]
+    if any(name == "stop" for _, name in hits):
+        out.intents = [Intent("stop")]  # "stop right now": stopping wins over everything else
+        return out
     for _, name in sorted(hits):
         if name == "spin" and amount == "max":
             name = "roll_full"  # "gira o punho todo" = the full turn, not 90 degrees

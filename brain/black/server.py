@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 import claude_intents
+import routing
 import speech
 from commands import Intent, parse
 from crazy_show import Performer, make_robot, routine
@@ -45,9 +46,6 @@ LIFT_SPEED_CAP = 45.0  # deg/s on joints that fight gravity (5 V / 3 A supply)
 AUTO_STAND_MAX = 70.0  # shoulder_lift above this (lying forward) is too heavy to lift without a hand
 SPEED_RANGE = (10.0, 160.0)
 PAN_LIMIT, ROLL_LIMIT, WRIST_LIMIT = 110.0, 170.0, 40.0
-# Only really short commands take the instant keyword path; anything with more nuance goes to Claude
-# (a 6-word limit let "vá totalmente para a direita" through the parser, which missed "totalmente").
-FAST_MAX_WORDS = 4
 CONTACT_LOAD = 800  # 0..1000: straining this hard without moving = touching something (the table)
 STOP_WORDS = re.compile(r"^\W*(stop|para|pare|parar|chega|basta|alto|停|停下|停止|别动)\W*$", re.IGNORECASE)
 CAMERA_HFOV = 60.0  # degrees, Mac FaceTime camera, approx.
@@ -528,17 +526,16 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
         arm.log(f"heard: {text} -> refused, arm is {arm.status}", say=say)
         speech.speak(say, lang_hint or "pt")
         return {"heard": text, "intents": [], "say": say, "spoken": True, "status": arm.status}
-    # Fast path: short, common commands the keyword parser is sure about run at once, no API round trip.
-    if len(text.split()) <= FAST_MAX_WORDS and (lang_hint or "pt")[:2] in ("pt", "en"):
-        intents = parse(text).intents
-        if intents and all(i.name != "goto_color" for i in intents):
-            lang = (lang_hint or "pt")[:2]
-            start_sequence(intents, lang)
-            say = "Ok" if lang == "pt" else "OK"
-            arm.lang = lang
-            arm.log(f"heard: {text} -> fast {[i.name for i in intents]}", say=say)
-            speech.speak(say, lang)
-            return {"heard": text, "intents": [i.name for i in intents], "say": say, "spoken": True, "language": lang}
+    # Fast path: short, plain commands the keyword parser fully understands run at once, no API round trip.
+    intents = routing.fast_intents(text, lang_hint)
+    if intents is not None:
+        lang = (lang_hint or "pt")[:2]
+        start_sequence(intents, lang)
+        say = "Ok" if lang == "pt" else "OK"
+        arm.lang = lang
+        arm.log(f"heard: {text} -> fast {[i.name for i in intents]}", say=say)
+        speech.speak(say, lang)
+        return {"heard": text, "intents": [i.name for i in intents], "say": say, "spoken": True, "language": lang}
     t0 = time.time()
     try:
         plan = claude_intents.plan(text)
@@ -549,6 +546,9 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
         say = "Ok" if intents else "Não entendi"
         speech.speak(say, "pt")
         return {"heard": text, "intents": [i.name for i in intents], "say": say, "spoken": True}
+    if not plan.get("for_robot", True):
+        arm.log(f"ignored (not for the robot): {text}")
+        return {"heard": text, "intents": [], "say": "", "spoken": True, "ignored": True}
     lang = plan["language"] or lang_hint
     arm.lang = lang
     names = [i["name"] for i in plan["intents"]]
@@ -579,6 +579,9 @@ async def audio(request: Request):
     suffix = ".mp4" if "mp4" in request.headers.get("content-type", "") else ".webm"
     t0 = time.time()
     text, lang = speech.transcribe(data, suffix)
+    if not text:
+        arm.log(f"whisper {time.time() - t0:.1f}s: noise or silence, ignored")
+        return {"heard": "", "intents": [], "say": "", "spoken": True, "ignored": True}
     arm.log(f"whisper {time.time() - t0:.1f}s [{lang}]: {text}")
     return handle_text(text, lang or "pt")
 

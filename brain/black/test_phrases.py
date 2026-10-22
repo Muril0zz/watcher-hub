@@ -4,9 +4,7 @@ No arm needed. Usage: python test_phrases.py"""
 import re
 
 import claude_intents
-from commands import parse
-
-FAST_MAX_WORDS = 4  # keep in sync with server.py
+from routing import fast_intents
 
 # (phrase, language Whisper would report, expected [(intent, amount or degrees)])
 CASES = [
@@ -59,11 +57,12 @@ CASES = [
 
 
 def route(text: str, lang: str):
-    if len(text.split()) <= FAST_MAX_WORDS and lang in ("pt", "en"):
-        intents = parse(text).intents
-        if intents:
-            return "fast", [(i.name, i.degrees or i.amount) for i in intents]
+    intents = fast_intents(text, lang)
+    if intents is not None:
+        return "fast", [(i.name, i.degrees or i.amount) for i in intents]
     p = claude_intents.plan(text)
+    if not p.get("for_robot", True):
+        return "ignored", []
     return "claude", [(i["name"], i["degrees"] or i["amount"]) for i in p["intents"]]
 
 
@@ -78,10 +77,11 @@ def matches(got, want) -> bool:
     return True
 
 
-bad = 0
-for text, lang, want in CASES:
-    path, got = route(text, lang)
-    ok = matches(got, want)
-    bad += not ok
-    print(f"{'ok ' if ok else 'BAD'} [{path:6}] {text!r:44} -> {got}" + ("" if ok else f"   expected {want}"), flush=True)
-print(f"\n{len(CASES) - bad}/{len(CASES)} correct")
+if __name__ == "__main__":
+    bad = 0
+    for text, lang, want in CASES:
+        path, got = route(text, lang)
+        ok = matches(got, want)
+        bad += not ok
+        print(f"{'ok ' if ok else 'BAD'} [{path:6}] {text!r:44} -> {got}" + ("" if ok else f"   expected {want}"), flush=True)
+    print(f"\n{len(CASES) - bad}/{len(CASES)} correct")
