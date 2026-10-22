@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remédio na Mão · Voz</title>
+<style>
+  :root {
+    --bg: #0b1530; --panel: #12204a; --line: #22346e; --text: #eef2ff; --muted: #9aa8d6;
+    --accent: #2ee88a; --accent-ink: #04261a; --warn: #ffb020; --stop: #ff3d5a; --blue: #4d8dff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px;
+    grid-template-columns: 1.1fr 1fr; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--accent); }
+  .pill { padding: 4px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line);
+    font-size: 13px; color: var(--muted); }
+  .pill.ok { color: var(--accent); border-color: var(--accent); }
+  .pill.busy { color: var(--warn); border-color: var(--warn); }
+  .pill.bad { color: var(--stop); border-color: var(--stop); }
+  .spacer { flex: 1; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+  .mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
+  #mic { width: 150px; height: 150px; border-radius: 50%; border: 0; cursor: pointer; background: var(--accent);
+    color: var(--accent-ink); font-size: 18px; font-weight: 700; transition: transform .15s ease, box-shadow .2s ease; }
+  #mic:active { transform: scale(.97); }
+  #mic.on { background: var(--stop); color: #fff; box-shadow: 0 0 0 10px rgba(255,61,90,.18), 0 0 0 22px rgba(255,61,90,.08); }
+  @media (prefers-reduced-motion: no-preference) { #mic.on { animation: pulse 1.4s ease-in-out infinite; } }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 16px rgba(255,61,90,.22), 0 0 0 32px rgba(255,61,90,.06); } }
+  #heard { font-size: 22px; min-height: 1.4em; font-weight: 600; }
+  #said { color: var(--accent); font-size: 18px; min-height: 1.4em; }
+  .hint { color: var(--muted); font-size: 14px; }
+  form { display: flex; gap: 8px; width: 100%; }
+  input[type=text] { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font-size: 16px; }
+  button { font: inherit; }
+  .btn { padding: 12px 10px; border-radius: 12px; border: 1px solid var(--line); background: #1a2b5e; color: var(--text);
+    cursor: pointer; font-weight: 600; transition: transform .12s ease, background .2s ease; }
+  .btn:hover { background: #22397a; }
+  .btn:active { transform: scale(.97); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stop { background: var(--stop); border-color: var(--stop); color: #fff; font-size: 20px; padding: 16px; width: 100%; }
+  .stop:hover { background: #ff5b74; }
+  .chip { border-radius: 999px; }
+  .chip[data-color=green] { background: #16a34a; } .chip[data-color=red] { background: #dc2626; }
+  .chip[data-color=blue] { background: #2563eb; } .chip[data-color=yellow] { background: #ca8a04; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  .stack { display: grid; gap: 16px; align-content: start; }
+  #cam { width: 100%; border-radius: 12px; background: #000; aspect-ratio: 16/9; object-fit: cover; }
+  .joint { display: grid; grid-template-columns: 110px 1fr 60px; gap: 8px; align-items: center; font-size: 14px; }
+  .bar { position: relative; height: 10px; background: var(--bg); border-radius: 6px; overflow: hidden; }
+  .bar i { position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; background: var(--accent); border-radius: 2px; }
+  .bar b { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--warn); opacity: .8; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .speed { display: flex; align-items: center; gap: 10px; }
+  #speedVal { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 90px; text-align: center; }
+  .lang { display: flex; gap: 4px; }
+  .lang button { padding: 6px 10px; }
+  .lang button.sel { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Remédio na Mão <span>· controle por voz</span></h1>
+    <span id="status" class="pill">conectando…</span>
+    <div class="spacer"></div>
+    <div class="lang"><button class="btn sel" data-lang="pt">PT</button><button class="btn" data-lang="en">EN</button></div>
+  </header>
+
+  <section class="stack">
+    <div class="card mic-wrap">
+      <button id="mic" aria-pressed="false">Falar</button>
+      <div id="heard" aria-live="polite"></div>
+      <div id="said" aria-live="polite"></div>
+      <div class="hint" id="hint">Segure o botão (ou a barra de espaço) e fale em qualquer língua: “vai tudo pra cima”, “turn left a bit”, “挥挥手”, “faz o show”, “para”.</div>
+      <form id="typed"><input type="text" id="typedText" placeholder="…ou digite um comando" autocomplete="off"><button class="btn">Enviar</button></form>
+    </div>
+    <button class="btn stop" data-intent="stop">PARAR</button>
+    <div class="card">
+      <h2>Movimento</h2>
+      <div class="grid">
+        <button class="btn" data-intent="left">⟲ Esquerda</button>
+        <button class="btn" data-intent="up">↑ Sobe</button>
+        <button class="btn" data-intent="right">Direita ⟳</button>
+        <button class="btn" data-intent="center">● Centro</button>
+        <button class="btn" data-intent="down">↓ Desce</button>
+        <button class="btn" data-intent="home">Em pé</button>
+        <button class="btn" data-intent="open">Abre garra</button>
+        <button class="btn" data-intent="close">Fecha garra</button>
+        <button class="btn" data-intent="spin">Gira punho</button>
+        <button class="btn" data-intent="wave">Acena</button>
+        <button class="btn" data-intent="nod">Sim</button>
+        <button class="btn" data-intent="shake">Não</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="stack">
+    <div class="card">
+      <h2>Velocidade</h2>
+      <div class="speed">
+        <button class="btn" data-intent="slower">− Devagar</button>
+        <div id="speedVal">100%</div>
+        <button class="btn" data-intent="faster">Rápido +</button>
+        <div class="spacer"></div>
+        <button class="btn" data-intent="show">★ Show</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Vai até a cor</h2>
+      <div class="grid4">
+        <button class="btn chip" data-intent="goto_color" data-color="green">Verde</button>
+        <button class="btn chip" data-intent="goto_color" data-color="red">Vermelho</button>
+        <button class="btn chip" data-intent="goto_color" data-color="blue">Azul</button>
+        <button class="btn chip" data-intent="goto_color" data-color="yellow">Amarelo</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Câmera</h2>
+      <img id="cam" alt="Câmera do Mac">
+    </div>
+    <div class="card">
+      <h2>Juntas <span class="hint">(verde = real, amarelo = alvo)</span></h2>
+      <div id="joints" style="display:grid; gap:8px"></div>
+    </div>
+  </section>
+</main>
+<script>
+const JOINTS = [["shoulder_pan","Base",-120,120],["shoulder_lift","Ombro",-40,100],["elbow_flex","Antebraço",-100,95],
+  ["wrist_flex","Punho",-100,100],["wrist_roll","Giro punho",-180,180],["gripper","Garra",0,100]];
+let lang = "pt";
+const $ = (id) => document.getElementById(id);
+
+$("joints").innerHTML = JOINTS.map(([k, label]) =>
+  `<div class="joint"><span>${label}</span><div class="bar"><b id="t_${k}"></b><i id="m_${k}"></i></div><span class="num" id="n_${k}">–</span></div>`).join("");
+
+function speak(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = lang === "en" ? "en-US" : "pt-BR";
+  u.rate = 1.1;
+  speechSynthesis.speak(u);
+}
+
+async function send(payload) {
+  try {
+    const r = await fetch("/command", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lang, ...payload }) });
+    const data = await r.json();
+    $("said").textContent = data.say;
+    if (!data.spoken) speak(data.say);  // the server already said it out loud on the Mac
+  } catch (e) { $("said").textContent = "Servidor fora do ar"; }
+}
+
+document.querySelectorAll("[data-intent]").forEach((b) => b.addEventListener("click", () => {
+  $("heard").textContent = b.textContent.trim();
+  send({ intent: b.dataset.intent, color: b.dataset.color || null });
+}));
+$("typed").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = $("typedText").value.trim();
+  if (!text) return;
+  $("heard").textContent = "“" + text + "”";
+  $("typedText").value = "";
+  send({ text });
+});
+document.querySelectorAll("[data-lang]").forEach((b) => b.addEventListener("click", () => {
+  lang = b.dataset.lang;
+  document.querySelectorAll("[data-lang]").forEach((x) => x.classList.toggle("sel", x === b));
+}));
+
+// ---- hold to talk: audio -> Whisper (any language) -> Claude -> arm ----
+let rec = null, chunks = [];
+async function startRec() {
+  if (rec) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    rec = new MediaRecorder(stream);
+    chunks = [];
+    rec.ondataavailable = (e) => chunks.push(e.data);
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(chunks, { type: rec.mimeType });
+      rec = null;
+      if (blob.size < 2000) return;
+      $("heard").textContent = "…";
+      const r = await fetch("/audio", { method: "POST", headers: { "Content-Type": blob.type || "audio/webm" }, body: blob });
+      const data = await r.json();
+      $("heard").textContent = data.heard ? "“" + data.heard + "”" : "";
+      $("said").textContent = data.say || "";
+    };
+    rec.start();
+    $("mic").classList.add("on");
+    $("mic").textContent = "Ouvindo…";
+  } catch (e) { $("said").textContent = "Microfone: " + e.message; }
+}
+function stopRec() {
+  if (rec && rec.state === "recording") rec.stop();
+  $("mic").classList.remove("on");
+  $("mic").textContent = "Segure para falar";
+}
+$("mic").textContent = "Segure para falar";
+$("mic").addEventListener("pointerdown", startRec);
+["pointerup", "pointerleave", "pointercancel"].forEach((ev) => $("mic").addEventListener(ev, stopRec));
+document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "INPUT" && !e.repeat) { e.preventDefault(); startRec(); } });
+document.addEventListener("keyup", (e) => { if (e.code === "Space" && e.target.tagName !== "INPUT") { e.preventDefault(); stopRec(); } });
+
+// ---- live state + camera ----
+const STATUS = { ready: ["pronto", "ok"], moving: ["movendo", "ok"], show: ["show!", "busy"], connecting: ["conectando…", "busy"],
+  starting: ["iniciando…", "busy"], recovering: ["reconectando…", "busy"], lying: ["deitado: levante o braço com a mão", "bad"], offline: ["braço desconectado", "bad"] };
+const pct = (v, lo, hi) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
+async function poll() {
+  try {
+    const s = await (await fetch("/state")).json();
+    const [label, cls] = STATUS[s.status] || [s.status, ""];
+    $("status").textContent = label;
+    $("status").className = "pill " + cls;
+    $("speedVal").textContent = s.speed_pct + "%";
+    for (const [k, , lo, hi] of JOINTS) {
+      const m = s.measured[k], t = s.target[k];
+      if (m !== undefined) { $("m_" + k).style.left = pct(m, lo, hi) + "%"; $("n_" + k).textContent = m.toFixed(0) + (k === "gripper" ? "%" : "°"); }
+      if (t !== undefined) $("t_" + k).style.left = pct(t, lo, hi) + "%";
+    }
+  } catch (e) { $("status").textContent = "servidor fora do ar"; $("status").className = "pill bad"; }
+  setTimeout(poll, 300);
+}
+poll();
+function cam() {
+  const img = new Image();
+  img.onload = () => { $("cam").src = img.src; setTimeout(cam, 400); };
+  img.onerror = () => setTimeout(cam, 1500);
+  img.src = "/camera.jpg?t=" + Date.now();
+}
+cam();
+</script>
+</body>
+</html>
