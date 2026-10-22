@@ -10,7 +10,9 @@ from pathlib import Path
 
 import anthropic
 
-MODEL = os.environ.get("ARM_MODEL", "claude-opus-5-5")
+# Haiku: 1.7 s avg vs Opus 5.6 s from here (bench_models.py), same intents on the test phrases.
+# This call only maps a sentence onto ~20 intents, so speed wins; ARM_MODEL=claude-opus-5-5 to switch back.
+MODEL = os.environ.get("ARM_MODEL", "claude-haiku-5-5")
 ENV_FILE = Path.home() / ".config" / "claude-brain" / ".env"
 
 INTENTS = ["stop", "show", "wave", "nod", "shake", "home", "center", "left", "right", "side", "up", "down",
@@ -87,3 +89,16 @@ def plan(text: str) -> dict:
     if resp.stop_reason == "refusal":
         raise RuntimeError("model declined")
     return json.loads(next(b.text for b in resp.content if b.type == "text"))
+
+
+def keep_warm(every: float = 20.0):
+    """Free request every few seconds so the TLS connection to the API stays open (opening one from
+    here costs ~2 s, which otherwise lands on the next spoken command)."""
+    import time
+
+    while True:
+        try:
+            client().models.list(limit=1)
+        except Exception:
+            pass
+        time.sleep(every)
