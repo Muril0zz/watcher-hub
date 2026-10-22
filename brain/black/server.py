@@ -45,7 +45,8 @@ LIFT_JOINTS = ("shoulder_lift", "elbow_flex")
 LIFT_SPEED_CAP = 45.0  # deg/s on joints that fight gravity (5 V / 3 A supply)
 AUTO_STAND_MAX = 70.0  # shoulder_lift above this (lying forward) is too heavy to lift without a hand
 SPEED_RANGE = (10.0, 160.0)
-PAN_LIMIT, ROLL_LIMIT, WRIST_LIMIT = 110.0, 170.0, 40.0
+# pan stops short of the base's end stop: parked at 110 deg it stuck there and tripped the contact guard
+PAN_LIMIT, ROLL_LIMIT, WRIST_LIMIT = 95.0, 170.0, 40.0
 CONTACT_LOAD = 800  # 0..1000: straining this hard without moving = touching something (the table)
 STOP_WORDS = re.compile(r"^\W*(stop|para|pare|parar|chega|basta|alto|停|停下|停止|别动)\W*$", re.IGNORECASE)
 CAMERA_HFOV = 60.0  # degrees, Mac FaceTime camera, approx.
@@ -299,7 +300,8 @@ class Arm:
             loads = self.robot.bus.sync_read("Present_Load", normalize=False)
         except Exception:
             return
-        for j in ("shoulder_lift", "elbow_flex", "wrist_flex", "shoulder_pan"):
+        # the base turns flat (it can't hit the table) and its end-stop friction gave false alarms
+        for j in ("shoulder_lift", "elbow_flex", "wrist_flex"):
             far = abs(self.measured[j] - target[j]) > 3
             still = abs(self.measured[j] - before.get(j, self.measured[j])) < 0.5
             if far and still and (loads[j] & 0x3FF) >= CONTACT_LOAD:
@@ -508,7 +510,7 @@ def start_sequence(intents: list, lang: str):
     threading.Thread(target=run_sequence, args=(intents, lang, arm.seq), daemon=True).start()
 
 
-def handle_text(text: str, lang_hint: str = "pt", quiet: bool = False) -> dict:
+def handle_text(text: str, lang_hint: str = "pt", quiet: bool = False, addressed: bool = False) -> dict:
     """Any language: Claude picks the intents and the reply; the keyword parser is the offline fallback.
     quiet: don't speak on the Mac (the Watcher answers out loud itself)."""
     speak = (lambda *a, **k: None) if quiet else speech.speak
@@ -540,7 +542,7 @@ def handle_text(text: str, lang_hint: str = "pt", quiet: bool = False) -> dict:
         return {"heard": text, "intents": [i.name for i in intents], "say": say, "spoken": True, "language": lang}
     t0 = time.time()
     try:
-        plan = claude_intents.plan(text)
+        plan = claude_intents.plan(text, addressed=addressed)
     except Exception as e:
         arm.log(f"Claude unavailable ({e}); keyword fallback")
         intents = parse(text).intents
@@ -548,7 +550,7 @@ def handle_text(text: str, lang_hint: str = "pt", quiet: bool = False) -> dict:
         say = "Ok" if intents else "Não entendi"
         speak(say, "pt")
         return {"heard": text, "intents": [i.name for i in intents], "say": say, "spoken": True}
-    if not plan.get("for_robot", True):
+    if not addressed and not plan.get("for_robot", True):
         arm.log(f"ignored (not for the robot): {text}")
         return {"heard": text, "intents": [], "say": "", "spoken": True, "ignored": True}
     lang = plan["language"] or lang_hint
@@ -601,6 +603,9 @@ def camera_jpg():
 
 WATCHER_HEARD = re.compile(r"Application: >> (.+?)\s*$")
 WAKE_WORDS = {"marco", "你好小智", "小智", "hi esp", "hey marco"}
+# one-word answers to Marco's own questions ("Yes." made the arm nod): conversation, not commands
+SMALL_TALK = {"yes", "no", "ok", "okay", "yeah", "yep", "nope", "sure", "thanks", "thank you", "sim", "não", "nao",
+              "tá", "ta", "beleza", "好", "好的", "是", "是的", "不", "不是", "对", "嗯", "谢谢"}
 
 
 def watcher_bridge():
@@ -626,9 +631,12 @@ def watcher_bridge():
                         heard = m.group(1).strip()
                         if heard.lower().strip(" .!?。！") in WAKE_WORDS:
                             continue
+                        if heard.lower().strip(" .!?,。！，") in SMALL_TALK:
+                            arm.log(f"[watcher] {heard} (answer to Marco, not a command)")
+                            continue
                         lang = "zh" if re.search(r"[\u4e00-\u9fff]", heard) else "pt"
                         arm.log(f"[watcher] {heard}")
-                        threading.Thread(target=handle_text, args=(heard, lang, True), daemon=True).start()
+                        threading.Thread(target=handle_text, args=(heard, lang, True, True), daemon=True).start()
             except Exception as e:  # unplugged, busy, reset: try again
                 arm.log(f"watcher bridge: {e}")
                 time.sleep(3)

@@ -102,8 +102,13 @@ def speech_hint(text: str) -> str:
     return ""
 
 
-def plan(text: str) -> dict:
-    text = text + speech_hint(text)
+ADDRESSED_NOTE = ("\n(Heard by the robot's own microphone right after its wake word 'Marco', so it IS meant for the "
+                  "robot. Its speech recognizer often mishears: map sound-alikes to the closest command, e.g. "
+                  "'grow right' -> go right, 'turn lift' -> turn left, 'way of' -> wave. 'Marco'/'Mark' is just its name.)")
+
+
+def plan(text: str, addressed: bool = False) -> dict:
+    text = text + speech_hint(text) + (ADDRESSED_NOTE if addressed else "")
     resp = client().messages.create(
         model=MODEL,
         max_tokens=1024,
