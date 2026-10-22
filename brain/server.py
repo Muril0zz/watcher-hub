@@ -7,7 +7,9 @@ Run (arm folded at rest, 12 V supply on):
   ../arm/.venv/bin/python server.py        then open http://127.0.0.1:8200
 The Watcher bridge can post here too: receiver.py --voice --arm http://127.0.0.1:8200/api/command --token ...
 """
+import os
 import re
+import sys
 import threading
 import time
 from collections import deque
@@ -24,6 +26,8 @@ from arm import Arm, ArmError
 from executor import Executor
 
 ROOT = Path(__file__).parent
+# think and talk, but never move (weak supply, rehearsals)
+DRY_RUN = "--dry-run" in sys.argv or os.environ.get("BRAIN_DRY_RUN") == "1"
 # Spoken stop words act at once, without waiting for Claude.
 STOP_WORDS = re.compile(r"^\W*(stop|para|pare|parar|chega|basta|alto|停|停下|停止|别动)\W*$", re.IGNORECASE)
 
@@ -67,7 +71,10 @@ def handle_text(text: str, source: str) -> dict:
     log(f"plan in {time.time() - t0:.1f}s ({plan['language']}, possible={plan['possible']}): "
         f"{[{k: v for k, v in a.items() if v is not None} for a in plan['actions']]}")
     say(plan["reply"], plan["language"])
-    threading.Thread(target=executor.run, args=(plan,), daemon=True).start()
+    if DRY_RUN:
+        log("dry run: arm not moved")
+    else:
+        threading.Thread(target=executor.run, args=(plan,), daemon=True).start()
     return {"ok": True, "plan": plan}
 
 
