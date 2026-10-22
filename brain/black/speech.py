@@ -28,6 +28,7 @@ VOICES = {
     "zh": ["Tingting", "Flo (Chinês (China continental))", "Eddy (Chinês (China continental))"],
     "en": ["Samantha", "Flo (Inglês (EUA))", "Albert"],
     "es": ["Monica", "Paulina", "Flo (Espanhol (Espanha))"],
+    "hi": ["Lekha"],
 }
 _installed = None
 _current = None
