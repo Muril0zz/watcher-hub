@@ -131,7 +131,14 @@ def make_robot(port, robot_id):
             position_p_coefficient=32,
         )
     )
+    # LeRobot's configure() drops every motor's torque while it rewrites settings, so a standing arm
+    # collapses on each reconnect. The settings (position mode, P=32) are already in the servos'
+    # EEPROM: skip it, aim each motor at where it already is, then make sure torque is on.
+    robot.configure = lambda: None
     robot.connect(calibrate=False)
+    here = robot.bus.sync_read("Present_Position", normalize=False)
+    robot.bus.sync_write("Goal_Position", here, normalize=False)
+    robot.bus.enable_torque()
     return robot
 
 

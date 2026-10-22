@@ -301,10 +301,15 @@ class Arm:
         except Exception:
             return
         # the base turns flat (it can't hit the table) and its end-stop friction gave false alarms
+        strain = getattr(self, "strain", {})
+        self.strain = strain
         for j in ("shoulder_lift", "elbow_flex", "wrist_flex"):
             far = abs(self.measured[j] - target[j]) > 3
             still = abs(self.measured[j] - before.get(j, self.measured[j])) < 0.5
-            if far and still and (loads[j] & 0x3FF) >= CONTACT_LOAD:
+            # a motion's first instant is all load and no movement yet: only ~0.6 s of it means contact
+            strain[j] = strain.get(j, 0) + 1 if (far and still and (loads[j] & 0x3FF) >= CONTACT_LOAD) else 0
+            if strain[j] >= 3:
+                strain.clear()
                 with self.lock:
                     self.hold = True
                     self.queue.clear()
