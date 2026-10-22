@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 import planner
 import speech
 import vision
+import watcher_link
 from arm import DISABLED, Arm, ArmError
 from executor import Executor
 
@@ -63,8 +64,9 @@ def handle_text(text: str, source: str) -> dict:
     speech.chime()
     executor.stop()  # a new request replaces whatever was running
     t0 = time.time()
+    prompt = text + (watcher_link.NOTE if source == "watcher" else "")
     try:
-        plan = planner.plan(text, camera.jpeg(), arm.degrees(), sorted(DISABLED))
+        plan = planner.plan(prompt, camera.jpeg(), arm.degrees(), sorted(DISABLED))
     except Exception as e:  # network, rate limit, refusal
         log(f"planner error: {e}")
         say("Sorry, I could not think right now. Please try again.", "en")
@@ -151,6 +153,9 @@ def camera_jpg():
     data = camera.jpeg(size=(640, 360), quality=70)
     return Response(data or b"", media_type="image/jpeg", status_code=200 if data else 503)
 
+
+if "--watcher" in sys.argv:  # Marco -> this arm (stop the black-arm server's bridge: one port, one reader)
+    watcher_link.start(lambda heard: handle_text(heard, "watcher"), log)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8200, log_level="warning")
