@@ -480,6 +480,14 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
         arm.apply(Intent("stop"), lang_hint, camera)
         arm.log(f"heard: {text} -> STOP")
         return {"heard": text, "intents": ["stop"], "say": ""}
+    if arm.status not in ("ready", "moving"):
+        # never answer "sure!" while the arm can't move
+        msg = {"pt": "Ainda não estou pronto para me mexer.", "en": "I'm not ready to move yet.",
+               "zh": "我还没准备好，暂时不能动。", "es": "Todavía no estoy listo para moverme."}
+        say = msg.get((lang_hint or "pt")[:2], msg["en"])
+        arm.log(f"heard: {text} -> refused, arm is {arm.status}", say=say)
+        speech.speak(say, lang_hint or "pt")
+        return {"heard": text, "intents": [], "say": say, "spoken": True, "status": arm.status}
     # Fast path: short, common commands the keyword parser is sure about run at once, no API round trip.
     if len(text.split()) <= FAST_MAX_WORDS and (lang_hint or "pt")[:2] in ("pt", "en"):
         intents = parse(text).intents
