@@ -13,9 +13,12 @@ Verified on hardware:
   device's own replies are not forwarded. Read back from ntfy: "Yeah, I want you to move the arm up."
 - nvsfactory (0x9000) verified unchanged after every flash; full backup in `data/firmware-backup/`.
 
+- **Agent knows about the arm.** Role text from `docs/xiaozhi-agent-role.md` pasted on xiaozhi.me
+  (language and voice English). It answers in English, explains the arm, and confirms commands:
+  ">> I want the arm to move up." → "<< Moving the arm up." (0.44 s).
+
 Not working / open:
-- **Replies are in Chinese**: set the agent's language and voice to English on xiaozhi.me →
-  Console → Configure role. The "What time is it?" test with an English answer is still to do.
+- "What time is it?" not tested yet.
 - **Keeps listening after each reply**, so room conversation is transcribed and forwarded until it
   goes idle. Click the wheel to end, or the arm must ignore text that isn't a command.
 - Start speaking ~0.5 s after the wake word, or the first word is cut ("The arm up.").
