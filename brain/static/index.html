@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Arm Brain</title>
+<style>
+  :root { --bg:#0b1530; --panel:#12204a; --line:#22346e; --text:#eef2ff; --muted:#9aa8d6;
+          --accent:#ff7a45; --accent-ink:#2a0d00; --ok:#2ee88a; --stop:#ff3d5a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.45 -apple-system, system-ui, sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:20px 16px 40px; display:grid; gap:16px; grid-template-columns:1fr 1fr; }
+  @media (max-width:860px) { main { grid-template-columns:1fr; } }
+  header { grid-column:1/-1; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+  h1 { margin:0; font-size:22px; } h1 span { color:var(--accent); }
+  .muted { color:var(--muted); font-size:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:18px; }
+  .talk { display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; }
+  #talk { width:170px; height:170px; border-radius:50%; border:0; background:var(--accent); color:var(--accent-ink);
+          font-size:19px; font-weight:800; cursor:pointer; user-select:none; touch-action:none;
+          transition:transform .15s ease, box-shadow .2s ease; }
+  #talk:active, #talk.rec { transform:scale(.97); }
+  #talk.rec { background:var(--stop); color:#fff; box-shadow:0 0 0 12px rgba(255,61,90,.2); }
+  #stop { width:100%; padding:16px; border-radius:14px; border:0; background:var(--stop); color:#fff; font-size:20px; font-weight:800; cursor:pointer; }
+  form { display:flex; gap:8px; width:100%; }
+  input { flex:1; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--bg); color:var(--text); font-size:16px; }
+  .btn { padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:#1a2b5e; color:var(--text); font:inherit; font-weight:600; cursor:pointer; transition:transform .12s ease; }
+  .btn:active { transform:scale(.97); }
+  #cam { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:12px; background:#000; }
+  #log { height:330px; overflow:auto; display:flex; flex-direction:column; gap:6px; font-size:14px; }
+  .ev { color:var(--muted); } .ev b { color:var(--text); font-weight:600; }
+  .say { color:var(--ok); font-size:16px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 10px; }
+  .joints { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; font-variant-numeric:tabular-nums; font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Claude <span>Arm Brain</span></h1>
+    <span class="muted" id="status">conectando…</span>
+  </header>
+  <section style="display:grid; gap:16px; align-content:start">
+    <div class="card talk">
+      <button id="talk">Segure<br>para falar</button>
+      <div class="muted">Segure o botão (ou a barra de espaço) e fale em qualquer língua: português, English, 中文…</div>
+      <form id="typed"><input id="text" placeholder="…ou digite o pedido" autocomplete="off"><button class="btn">Enviar</button></form>
+    </div>
+    <button id="stop">PARAR</button>
+    <div class="card">
+      <h2>Ensinar posições</h2>
+      <div class="muted" style="margin-bottom:10px">“Soltar” tira a força (segure o braço!), posicione com a mão e clique em salvar.</div>
+      <div class="row">
+        <select id="pose" class="btn"><option>ready</option><option>up</option><option>forward</option><option>look_table</option><option>give</option></select>
+        <button class="btn" id="teach">Soltar</button><button class="btn" id="save">Salvar</button><button class="btn" id="rest">Descansar</button>
+      </div>
+    </div>
+  </section>
+  <section style="display:grid; gap:16px; align-content:start">
+    <div class="card"><h2>Câmera do punho</h2><img id="cam" alt="câmera do punho"></div>
+    <div class="card"><h2>Juntas</h2><div class="joints" id="joints"></div></div>
+    <div class="card"><h2>O que está acontecendo</h2><div id="log"></div></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const post = (url, body, type = "application/json") =>
+  fetch(url, { method: "POST", headers: { "Content-Type": type }, body: body === undefined ? undefined : (type === "application/json" ? JSON.stringify(body) : body) });
+
+// ---- hold to talk ----
+let rec = null, chunks = [];
+async function startRec() {
+  if (rec) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    rec = new MediaRecorder(stream);
+    chunks = [];
+    rec.ondataavailable = (e) => chunks.push(e.data);
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(chunks, { type: rec.mimeType });
+      rec = null;
+      if (blob.size > 2000) await post("/audio", blob, blob.type || "audio/webm");
+    };
+    rec.start();
+    $("talk").classList.add("rec");
+  } catch (e) { $("status").textContent = "microfone: " + e.message; }
+}
+function stopRec() { if (rec && rec.state === "recording") rec.stop(); $("talk").classList.remove("rec"); }
+$("talk").addEventListener("pointerdown", startRec);
+["pointerup", "pointerleave", "pointercancel"].forEach((ev) => $("talk").addEventListener(ev, stopRec));
+document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "INPUT" && !e.repeat) { e.preventDefault(); startRec(); } });
+document.addEventListener("keyup", (e) => { if (e.code === "Space" && e.target.tagName !== "INPUT") { e.preventDefault(); stopRec(); } });
+
+$("typed").addEventListener("submit", (e) => { e.preventDefault(); const t = $("text").value.trim(); if (t) post("/api/command", { text: t, source: "typed" }); $("text").value = ""; });
+$("stop").addEventListener("click", () => post("/stop"));
+$("teach").addEventListener("click", () => post("/teach/" + $("pose").value));
+$("save").addEventListener("click", () => post("/save/" + $("pose").value));
+$("rest").addEventListener("click", () => post("/rest"));
+
+// ---- live state ----
+const NAMES = { shoulder_pan: "base", shoulder_lift: "ombro", elbow_flex: "cotovelo", wrist_flex: "punho", wrist_roll: "giro", gripper: "garra" };
+async function poll() {
+  try {
+    const s = await (await fetch("/state")).json();
+    $("status").textContent = `${s.busy ? "trabalhando…" : "pronto"} · força ${s.torque ? "ligada" : "desligada"} · ${s.model}`;
+    $("joints").innerHTML = Object.entries(s.joints).map(([k, v]) => `<div>${NAMES[k] || k}: <b>${v}${k === "gripper" ? "%" : "°"}</b></div>`).join("");
+    $("log").innerHTML = s.events.slice().reverse().map((e) => e.say
+      ? `<div class="say">🗣 ${e.say}</div>` : `<div class="ev">${e.t} <b>${e.msg.replace(/</g, "&lt;")}</b></div>`).join("");
+  } catch (e) { $("status").textContent = "servidor fora do ar"; }
+  setTimeout(poll, 500);
+}
+poll();
+function cam() {
+  const img = new Image();
+  img.onload = () => { $("cam").src = img.src; setTimeout(cam, 300); };
+  img.onerror = () => setTimeout(cam, 1500);
+  img.src = "/camera.jpg?t=" + Date.now();
+}
+cam();
+</script>
+</body>
+</html>
