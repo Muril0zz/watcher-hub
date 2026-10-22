@@ -49,6 +49,7 @@ def say(text: str, lang: str):
 arm = Arm()
 executor = Executor(arm, camera, say=say, log=log)
 log(f"arm ready, rest pose {arm.rest}")
+threading.Thread(target=speech.warm_up, daemon=True).start()
 
 
 def handle_text(text: str, source: str) -> dict:

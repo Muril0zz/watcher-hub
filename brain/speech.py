@@ -3,11 +3,25 @@
 Whisper runs on the M-series GPU through mlx, so no audio leaves the laptop and Chinese, Portuguese
 and English all work without picking a language first.
 """
+import os
 import re
 import subprocess
 import tempfile
 
-WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
+# small: ~0.9 s per command on an M3 and right in pt/en/zh; large-v3-turbo was ~5 s for the same clips
+WHISPER_REPO = os.environ.get("BRAIN_WHISPER", "mlx-community/whisper-small-mlx")
+
+
+def _model_path() -> str:
+    """Local snapshot if downloaded (skips a hub round-trip on every call, ~seconds from China)."""
+    try:
+        from huggingface_hub import snapshot_download
+        return snapshot_download(WHISPER_REPO, local_files_only=True)
+    except Exception:
+        return WHISPER_REPO
+
+
+WHISPER_MODEL = _model_path()
 # Preferred voices per language, first one installed wins.
 VOICES = {
     "pt": ["Luciana", "Flo (Português (Brasil))", "Eddy (Português (Brasil))"],
@@ -26,8 +40,17 @@ def transcribe(audio: bytes, suffix: str = ".webm") -> tuple[str, str]:
     with tempfile.NamedTemporaryFile(suffix=suffix) as f:
         f.write(audio)
         f.flush()
-        out = mlx_whisper.transcribe(f.name, path_or_hf_repo=WHISPER_MODEL, condition_on_previous_text=False)
+        out = mlx_whisper.transcribe(f.name, path_or_hf_repo=WHISPER_MODEL, condition_on_previous_text=False,
+                                     temperature=0.0)
     return out["text"].strip(), out.get("language", "")
+
+
+def warm_up():
+    """Load the model now so the first spoken command isn't slow."""
+    import mlx_whisper
+    import numpy as np
+
+    mlx_whisper.transcribe(np.zeros(16000, dtype=np.float32), path_or_hf_repo=WHISPER_MODEL)
 
 
 def _voices() -> set[str]:
