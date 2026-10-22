@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 import planner
 import speech
 import vision
-from arm import Arm, ArmError
+from arm import DISABLED, Arm, ArmError
 from executor import Executor
 
 ROOT = Path(__file__).parent
@@ -64,7 +64,7 @@ def handle_text(text: str, source: str) -> dict:
     executor.stop()  # a new request replaces whatever was running
     t0 = time.time()
     try:
-        plan = planner.plan(text, camera.jpeg(), arm.degrees())
+        plan = planner.plan(text, camera.jpeg(), arm.degrees(), sorted(DISABLED))
     except Exception as e:  # network, rate limit, refusal
         log(f"planner error: {e}")
         say("Sorry, I could not think right now. Please try again.", "en")

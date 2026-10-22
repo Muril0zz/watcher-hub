@@ -25,6 +25,9 @@ Arm facts (angles in degrees, 0 = middle of travel):
 - elbow (elbow_flex): -100 (folded) .. 0 (forearm at a right angle) .. +87 (stretched out).
 - wrist_pitch (wrist_flex): -85..85.   wrist_roll: -150..150 (a "full turn" of the wrist = from -150 to 150).
 - gripper: 0 closed .. 100 open. It can hold light objects up to about 5 cm wide (a phone sideways is too wide to grab, but can be pushed).
+- A TABLE is right under the arm (the arm stands on it). Never drive the gripper down into it: prefer
+  moves that keep the gripper up; when asked to go down, go down in small steps (about 15 degrees).
+  If a joint touches something the arm stops and backs off by itself.
 - Reach: about 30 cm around the base, on the table in front of it. It cannot walk, lift more than ~200 g,
   open doors, pour liquids safely, or reach things it cannot see.
 
@@ -133,11 +136,17 @@ def _structured(content: list, schema: dict, system: str | None = None, max_toke
     return json.loads(text)
 
 
-def plan(transcript: str, jpeg: bytes | None, joints: dict) -> dict:
+def plan(transcript: str, jpeg: bytes | None, joints: dict, out_of_service: list[str] | None = None) -> dict:
     content = []
     if jpeg:
         content.append(_image_block(jpeg))
-    content.append({"type": "text", "text": f"Joint angles now: {json.dumps(joints)}\nPerson said: {transcript}"})
+    note = ""
+    if out_of_service:
+        note = (f"\nOut of service right now (limp, never move them): {', '.join(out_of_service)}. "
+                "The forearm hangs free, so reach is very short: picking or pushing things on the table is "
+                "probably not possible — say so kindly and shake 'no'. Turning the base, raising the shoulder, "
+                "moving/rotating the wrist, the gripper and gestures all work.")
+    content.append({"type": "text", "text": f"Joint angles now: {json.dumps(joints)}{note}\nPerson said: {transcript}"})
     return _structured(content, PLAN_SCHEMA, system=SYSTEM)
 
 

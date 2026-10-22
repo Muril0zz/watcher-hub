@@ -9,6 +9,7 @@ from arm import ADDR_GOAL, ADDR_LOAD, ADDR_POSITION, ADDR_SPEED, ADDR_TORQUE_ENA
 
 motor = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 limit = int(sys.argv[2]) if len(sys.argv) > 2 else 350
+delta = int(sys.argv[3]) if len(sys.argv) > 3 else 35
 arm = Arm()
 
 
@@ -30,7 +31,7 @@ arm._w1(motor, ADDR_TORQUE_ENABLE, 1)
 for i in range(5):
     time.sleep(0.2)
     sample(f"holding {i}")
-arm._w2(motor, ADDR_GOAL, pos + 35)  # ~3 degrees
+arm._w2(motor, ADDR_GOAL, pos + delta)  # 35 steps ~ 3 degrees
 for i in range(8):
     time.sleep(0.15)
     sample(f"tiny move {i}")

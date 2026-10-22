@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import vision
-from arm import RANGES, Arm, ArmError, deg_to_steps, steps_to_deg
+from arm import RANGES, Arm, ArmError, Contact, deg_to_steps, steps_to_deg
 
 POSES_FILE = Path(__file__).with_name("poses.json")
 JOINT_NAMES = {"base": "shoulder_pan", "shoulder": "shoulder_lift", "elbow": "elbow_flex",
@@ -33,6 +33,9 @@ FAIL = {
     "nograb": {"pt": "Não consegui segurar {t}.", "en": "I couldn't hold {t}.", "zh": "我没能抓住{t}。", "es": "No pude agarrar {t}."},
     "power": {"pt": "Perdi a força dos motores. Verifique a fonte.", "en": "The motors lost power. Check the supply.",
               "zh": "电机断电了，请检查电源。", "es": "Los motores perdieron energía. Revise la fuente."},
+    "contact": {"pt": "Encostei em alguma coisa, provavelmente a mesa, e recuei.",
+                "en": "I touched something, probably the table, so I backed off.",
+                "zh": "我碰到了东西，可能是桌子，已经退回来了。", "es": "Toqué algo, probablemente la mesa, y retrocedí."},
     "stopped": {"pt": "Parei.", "en": "Stopped.", "zh": "已停止。", "es": "Me detuve."},
 }
 
@@ -85,6 +88,10 @@ class Executor:
                 return True
             except Stopped:
                 self.say(fail_text("stopped", lang), lang)
+                return False
+            except Contact as e:
+                self.log(f"contact: {e}")
+                self.say(fail_text("contact", lang), lang)
                 return False
             except ArmError as e:
                 self.log(f"arm error: {e}")

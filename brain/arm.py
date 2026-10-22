@@ -5,6 +5,7 @@ already in the servos' EEPROM (nothing here rewrites it, so arm/panel.py keeps w
 The servos run their own speed/acceleration profile; this class sets goals, then watches for
 arrival, stalls, heat and power drops.
 """
+import os
 import threading
 import time
 
@@ -23,7 +24,16 @@ RANGES = {
     "wrist_roll": (341, 3755),
     "gripper": (2046, 3094),  # closed .. open
 }
-TORQUE_LIMITS = {"gripper": 400, "shoulder_lift": 800, "elbow_flex": 800}  # x0.1 %, RAM (reset on power cycle)
+# x0.1 %, RAM (reset on power cycle). Kept low on purpose: pushing into the table (it sits right under the
+# arm) at full torque stalls a servo, and a stalled servo pulls more than the 12 V / 2 A supply can give.
+TORQUE_LIMITS = {"shoulder_pan": 500, "shoulder_lift": 650, "elbow_flex": 550, "wrist_flex": 450,
+                 "wrist_roll": 400, "gripper": 400}
+CONTACT_FRACTION = 0.8  # load at this fraction of the joint's torque limit = touching something
+BACK_OFF_STEPS = 70  # ~6 degrees away from whatever it touched
+# Joints kept limp and never commanded. The white arm's elbow servo (id 3) pulls the 12 V supply down to
+# ~5 V whenever it produces torque, even 3 degrees at 35% (brain/elbow_probe.py); until it is replaced
+# the forearm hangs free. Set BRAIN_DISABLED_JOINTS="" once a healthy servo is fitted.
+DISABLED = {j for j in os.environ.get("BRAIN_DISABLED_JOINTS", "elbow_flex").split(",") if j}
 HOT_C = 60
 
 ADDR_TORQUE_ENABLE, ADDR_ACCEL, ADDR_GOAL, ADDR_SPEED, ADDR_TORQUE_LIMIT = 40, 41, 42, 46, 48
@@ -42,6 +52,14 @@ def steps_to_deg(steps: int) -> float:
 
 class ArmError(Exception):
     pass
+
+
+class Contact(ArmError):
+    """A joint pushed into something (the table, an object, a person) and the arm backed off."""
+
+    def __init__(self, joint: str):
+        super().__init__(f"{joint} touched something and backed off")
+        self.joint = joint
 
 
 class Arm:
@@ -105,9 +123,12 @@ class Arm:
 
     # ---- torque -------------------------------------------------------------------------
     def enable(self):
-        """Torque on, holding the current pose (so nothing jumps)."""
+        """Torque on, holding the current pose (so nothing jumps). Disabled joints stay limp."""
         pos = self.positions()
         for j, i in JOINTS.items():
+            if j in DISABLED:
+                self._w1(i, ADDR_TORQUE_ENABLE, 0)
+                continue
             self._w2(i, ADDR_GOAL, pos[j])
             self._w1(i, ADDR_ACCEL, 8)  # gentle starts: a hard start from the folded pose dips the 12 V supply
             self._w2(i, ADDR_SPEED, self.speed)
@@ -134,6 +155,8 @@ class Arm:
         self.stop_flag.clear()
         goals = {}
         for j, steps in targets.items():
+            if j in DISABLED:
+                continue
             lo, hi = RANGES[j]
             goals[j] = max(lo, min(hi, int(steps)))
             self._w2(JOINTS[j], ADDR_SPEED, self.speed)
@@ -159,16 +182,37 @@ class Arm:
         for j, i in JOINTS.items():
             self._w2(i, ADDR_GOAL, pos[j])
 
+    def _load(self, joint: str) -> int:
+        """Effort the servo is putting out, 0..1000 (the register's bit 10 is only the direction)."""
+        return self._r2(JOINTS[joint], ADDR_LOAD) & 0x3FF
+
     def _wait(self, goals: dict[str, int], timeout: float):
         start = time.time()
+        origin = None
         last, still_since = None, None
+        pushing = {j: 0 for j in goals}
         while time.time() - start < timeout:
             if self.stop_flag.is_set():
                 return
             time.sleep(0.05)
             pos = {j: self._r2(JOINTS[j], ADDR_POSITION) for j in goals}
+            origin = origin or pos
             if all(abs(pos[j] - goals[j]) <= 15 for j in goals):
                 return
+            for j in goals:
+                if j == "gripper" or abs(pos[j] - goals[j]) <= 15:
+                    continue  # the gripper is meant to squeeze things
+                # straining AND not moving = blocked; straining while moving is just lifting the arm's weight
+                stuck = last is not None and abs(pos[j] - last[j]) < 3
+                hard = stuck and self._load(j) >= CONTACT_FRACTION * TORQUE_LIMITS.get(j, 1000)
+                pushing[j] = pushing[j] + 1 if hard else 0
+                if pushing[j] >= 2:  # two samples in a row: really touching, not a jerk
+                    away = -1 if goals[j] > origin[j] else 1
+                    hold = {k: pos[k] for k in goals}
+                    hold[j] = pos[j] + away * BACK_OFF_STEPS
+                    self.move_steps(hold, wait=False)
+                    time.sleep(0.4)
+                    raise Contact(j)
             if last is not None and all(abs(pos[j] - last[j]) < 3 for j in goals):
                 still_since = still_since or time.time()
                 if time.time() - still_since > 0.8:  # blocked (holding an object, hit something)
