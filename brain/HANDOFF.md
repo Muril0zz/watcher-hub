@@ -82,12 +82,12 @@ xiaozhi.me lets an agent call external tools through an "MCP接入点" (MCP acce
 
 ## How to run it
 
-Everything is on GitHub in `mehdi-loup/watcher-hub`, branch **`feat/claude-brain`**, folder `brain/`. It runs on a Mac with Apple Silicon (local Whisper uses Apple MLX).
+Everything is on GitHub in branch **`feat/claude-brain`**, folder `brain/`: on Murilo's fork `Muril0zz/watcher-hub` and in a pull request to `mehdi-loup/watcher-hub` (once merged, it is in `main`). It runs on a Mac with Apple Silicon (local Whisper uses Apple MLX).
 
 **One-time setup**
 
 ```bash
-git clone https://github.com/mehdi-loup/watcher-hub.git && cd watcher-hub
+git clone https://github.com/Muril0zz/watcher-hub.git && cd watcher-hub
 git checkout feat/claude-brain
 python3.12 -m venv .venv
 .venv/bin/pip install feetech-servo-sdk pyserial lerobot deepdiff anthropic mlx-whisper \
