@@ -14,10 +14,11 @@ Two modes, matching the two local output channels in the Watcher firmware:
                    USB-serial adapter. Enable "Serial Port / UART Output" on
                    the task. Each alarm arrives as one JSON line ending \\r\\n.
 
-  --voice PORT     Also read the Watcher's USB-C console and turn push-to-talk
+  --voice [PORT]   Also read the Watcher's USB-C console and turn push-to-talk
                    transcripts ("move the arm up/down/left/right") into
                    voice events. Uses the Watcher's SenseCraft speech-to-text;
-                   control.py can't use that port while this runs.
+                   PORT is auto-detected if omitted. control.py can't use
+                   that port while this runs.
 
 Every event is printed, appended to data/events.jsonl, its image saved to
 data/images/, and passed to on_event() -- put your own logic there
@@ -26,7 +27,7 @@ data/images/, and passed to on_event() -- put your own logic there
 Usage:
   python3 watcher/receiver.py                    # HTTP on 0.0.0.0:8887
   python3 watcher/receiver.py --port 9000 --token secret
-  python3 watcher/receiver.py --voice /dev/cu.usbmodem…3      # + voice commands
+  python3 watcher/receiver.py --voice                         # + voice commands
   python3 watcher/receiver.py --mode uart --serial /dev/ttyUSB0   # pip install pyserial
 """
 import argparse
@@ -258,8 +259,12 @@ if __name__ == "__main__":
     ap.add_argument("--token", default=None, help="require this HTTP Token (optional)")
     ap.add_argument("--serial", default="/dev/ttyUSB0", help="serial device for uart mode")
     ap.add_argument("--baud", type=int, default=115200)
-    ap.add_argument("--voice", metavar="PORT", help="Watcher USB-C console port for voice commands")
+    ap.add_argument("--voice", metavar="PORT", nargs="?", const="auto",
+                    help="voice commands from the Watcher's USB-C console (port auto-detected if omitted)")
     a = ap.parse_args()
+    if a.voice == "auto":
+        from control import find_console  # watcher/ is on sys.path when run as a script
+        a.voice = find_console(a.baud)
     if a.voice:
         threading.Thread(target=run_voice, args=(a.voice, a.baud), daemon=True).start()
     if a.mode == "http":

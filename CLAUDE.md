@@ -19,15 +19,16 @@ source .venv/bin/activate
 python -m unittest discover -s tests -v      # run after every change
 python watcher/receiver.py                   # receive alarms
 python watcher/control.py ports
-python watcher/control.py -p <PORT> battery  # find the console port
-python watcher/control.py -p <PORT> load gesture
+python watcher/receiver.py --voice           # alarms + push-to-talk voice commands
+python watcher/control.py battery            # console port auto-detected (-p PORT to override)
+python watcher/control.py load gesture
 python tools/fake_watcher.py --push http://127.0.0.1:8887   # no hardware
 ```
 
 ## The device
 - Unit name "Marco", **factory SenseCraft firmware**, EUI `2CF7F1C98280008D`, SenseCraft Remote Control ON (a task sent from the app replaces one loaded over USB).
 - App setting **HTTP Message Block** must be `http://<laptop-LAN-IP>:8887`. Laptop and Watcher on the same Wi-Fi; allow incoming 8887 in the firewall.
-- USB-C usually enumerates **two** serial ports (ESP32 + Himax AI chip). The `SenseCAP>` console is on the ESP32 one, 115200 baud. If `battery` prints nothing, try the other port.
+- USB-C usually enumerates **two** serial ports (ESP32 + Himax AI chip). The `SenseCAP>` console is on the ESP32 one, 115200 baud. `find_console()` picks it automatically (VID:PID 1A86:55D2, answers `SenseCAP>`); port names change between USB sockets.
 
 ## Protocol facts (verified in firmware source, Seeed-Studio/SenseCAP-Watcher-Firmware `examples/factory_firmware`)
 - **Alarms are push-only**: the Watcher sends something only when a running task fires. There is no status polling API.

@@ -11,18 +11,19 @@ One-time setup in the SenseCraft app:
   (that is where every "http alarm" block sends its POST)
 
 Usage (pip install pyserial):
-  python3 watcher/control.py ports                  # find the Watcher's serial port
-  python3 watcher/control.py -p PORT load person    # built-in preset
-  python3 watcher/control.py -p PORT load my.json   # your own task flow file
-  python3 watcher/control.py -p PORT export         # print the running task flow
-  python3 watcher/control.py -p PORT add-http       # make the running task (e.g. made by voice) push to the receiver
-  python3 watcher/control.py -p PORT battery
-  python3 watcher/control.py -p PORT rgb 255 0 0    # LED colour
-  python3 watcher/control.py -p PORT cmd "help"     # any console command
-  python3 watcher/control.py -p PORT monitor        # stream the device log
+  python3 watcher/control.py ports           # list serial ports
+  python3 watcher/control.py load person     # built-in preset
+  python3 watcher/control.py load my.json    # your own task flow file
+  python3 watcher/control.py export          # print the running task flow
+  python3 watcher/control.py add-http        # make the running task (e.g. made by voice) push to the receiver
+  python3 watcher/control.py battery
+  python3 watcher/control.py rgb 255 0 0     # LED colour
+  python3 watcher/control.py cmd "help"      # any console command
+  python3 watcher/control.py monitor         # stream the device log
+  python3 watcher/control.py -p PORT battery # pick the port yourself
 
 The USB-C port usually shows up as TWO serial ports (ESP32 + Himax AI chip).
-The console is on the ESP32 one: if `battery` prints nothing, try the other.
+Without -p, the one answering with the SenseCAP> prompt is picked automatically.
 Presets: person, gesture (open palm = "call for help"), pet.
 """
 import argparse
@@ -157,9 +158,29 @@ def add_http_alarm(flow: dict, silence: int = 5) -> dict:
     return flow
 
 
+WATCHER_USB = (0x1A86, 0x55D2)  # WCH dual serial chip: ESP32 console + Himax
+
+
+def find_console(baud: int = 115200) -> str:
+    """Return the Watcher port that answers with the SenseCAP> prompt."""
+    ports = sorted(p.device for p in list_ports.comports() if (p.vid, p.pid) == WATCHER_USB)
+    if not ports:
+        sys.exit("No Watcher found on USB (check the cable carries data, or give -p PORT)")
+    for port in ports:
+        with serial.Serial(port, baud, timeout=0.1) as ser:
+            ser.reset_input_buffer()
+            ser.write(b"\r")
+            end, out = time.time() + 1.5, b""
+            while time.time() < end and b"SenseCAP>" not in out:
+                out += ser.read(4096)
+        if b"SenseCAP>" in out:
+            return port
+    sys.exit(f"No SenseCAP> prompt on {', '.join(ports)} (give -p PORT)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Control a SenseCAP Watcher over USB")
-    ap.add_argument("-p", "--port", help="serial port, e.g. /dev/ttyACM0, /dev/cu.usbmodem…, COM5")
+    ap.add_argument("-p", "--port", help="serial port, e.g. /dev/cu.usbmodem…, COM5 (default: auto-detect)")
     ap.add_argument("-b", "--baud", type=int, default=115200)
     sub = ap.add_subparsers(dest="action", required=True)
     sub.add_parser("ports", help="list serial ports")
@@ -198,7 +219,8 @@ def main() -> None:
             return
 
     if not a.port:
-        sys.exit("Give the serial port with -p (see: watcher/control.py ports)")
+        a.port = find_console(a.baud)
+        print(f"Using {a.port}", file=sys.stderr)
     con = Console(a.port, a.baud)
 
     if a.action == "load":

@@ -10,7 +10,7 @@ source .venv/bin/activate
 1. SenseCraft app → device Settings → **HTTP Message Block** → URL `http://<LAN-IP>:8887`.
 2. Terminal 1: `python watcher/receiver.py`
 3. Terminal 2: plug the Watcher in by USB-C, then
-   `python watcher/control.py ports` → `python watcher/control.py -p <PORT> battery` → `python watcher/control.py -p <PORT> load gesture`
+   `python watcher/control.py battery` → `python watcher/control.py load gesture` (the console port is auto-detected; add `-p PORT` to override)
 4. Show an open palm to the Watcher → the alarm appears in terminal 1 and `data/events.jsonl`.
 
 No hardware: `python tools/fake_watcher.py --push http://127.0.0.1:8887` and use the port it prints.

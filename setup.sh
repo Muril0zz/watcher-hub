@@ -33,8 +33,8 @@ cat <<'EOF'
 
 Next:
   source .venv/bin/activate
-  python watcher/receiver.py                       # terminal 1
-  python watcher/control.py -p <PORT> battery      # terminal 2, find the console port
-  python watcher/control.py -p <PORT> load gesture
+  python watcher/receiver.py --voice               # terminal 1 (alarms + voice commands)
+  python watcher/control.py battery                # terminal 2 (port auto-detected; stop the receiver first)
+  python watcher/control.py load gesture
 No hardware?  python tools/fake_watcher.py --push http://127.0.0.1:8887
 EOF
