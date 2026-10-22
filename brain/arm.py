@@ -5,9 +5,12 @@ already in the servos' EEPROM (nothing here rewrites it, so arm/panel.py keeps w
 The servos run their own speed/acceleration profile; this class sets goals, then watches for
 arrival, stalls, heat and power drops.
 """
+import json
 import os
 import threading
 import time
+
+from pathlib import Path
 
 import scservo_sdk as scs
 
@@ -24,6 +27,12 @@ RANGES = {
     "wrist_roll": (341, 3755),
     "gripper": (2046, 3094),  # closed .. open
 }
+# Measured on this arm by autocal.py (creeps to each stop / the table with little torque); overrides the
+# generic table above for every joint it measured.
+LIMITS_FILE = Path(__file__).with_name("limits.json")
+if LIMITS_FILE.exists():
+    RANGES.update({j: tuple(v) for j, v in json.loads(LIMITS_FILE.read_text()).items()})
+
 # x0.1 %, RAM (reset on power cycle). Kept low on purpose: pushing into the table (it sits right under the
 # arm) at full torque stalls a servo, and a stalled servo pulls more than the 12 V / 2 A supply can give.
 TORQUE_LIMITS = {"shoulder_pan": 500, "shoulder_lift": 650, "elbow_flex": 550, "wrist_flex": 450,
@@ -69,7 +78,9 @@ class Arm:
         self.pk = scs.PacketHandler(0)
         if not self.port.openPort() or not self.port.setBaudRate(BAUD):
             raise ArmError(f"could not open {port}")
-        missing = [j for j, i in JOINTS.items() if self.pk.ping(self.port, i)[1] != scs.COMM_SUCCESS]
+        missing = [j for j, i in JOINTS.items()
+                   if j not in DISABLED and self.pk.ping(self.port, i)[1] != scs.COMM_SUCCESS]
+        self.last_pos: dict[str, int] = {}
         if missing:
             raise ArmError(f"motors not answering: {missing} (12 V supply on?)")
         self.speed = 600  # steps/s
@@ -109,7 +120,15 @@ class Arm:
         raise ArmError(f"write {addr} to motor {motor_id} failed")
 
     def positions(self) -> dict[str, int]:
-        return {j: self._r2(i, ADDR_POSITION) for j, i in JOINTS.items()}
+        out = {}
+        for j, i in JOINTS.items():
+            try:
+                out[j] = self.last_pos[j] = self._r2(i, ADDR_POSITION)
+            except ArmError:
+                if j not in DISABLED:
+                    raise
+                out[j] = self.last_pos.get(j, 2048)  # out-of-service joint dropped off the bus: last known
+        return out
 
     def degrees(self) -> dict[str, float]:
         pos = self.positions()
@@ -119,7 +138,8 @@ class Arm:
         return out
 
     def health(self) -> dict:
-        return {j: {"temp": self._r1(i, ADDR_TEMP), "volt": self._r1(i, ADDR_VOLTAGE) / 10} for j, i in JOINTS.items()}
+        return {j: {"temp": self._r1(i, ADDR_TEMP), "volt": self._r1(i, ADDR_VOLTAGE) / 10}
+                for j, i in JOINTS.items() if j not in DISABLED}
 
     # ---- torque -------------------------------------------------------------------------
     def enable(self):
@@ -137,13 +157,17 @@ class Arm:
         self.torque = True
 
     def release(self):
-        for i in JOINTS.values():
-            self._w1(i, ADDR_TORQUE_ENABLE, 0)
+        for j, i in JOINTS.items():
+            try:
+                self._w1(i, ADDR_TORQUE_ENABLE, 0)
+            except ArmError:
+                if j not in DISABLED:
+                    raise
         self.torque = False
 
     def torque_still_on(self) -> bool:
         """Servos reboot limp after a 12 V dip; detect it so the caller can stop the plan."""
-        return any(self._r1(i, ADDR_TORQUE_ENABLE) for i in JOINTS.values())
+        return any(self._r1(i, ADDR_TORQUE_ENABLE) for j, i in JOINTS.items() if j not in DISABLED)
 
     # ---- motion -------------------------------------------------------------------------
     def set_speed(self, steps_per_s: int):
@@ -230,7 +254,7 @@ class Arm:
         return self._r2(JOINTS["gripper"], ADDR_POSITION) > RANGES["gripper"][0] + 60
 
     def too_hot(self) -> list[str]:
-        return [j for j, i in JOINTS.items() if self._r1(i, ADDR_TEMP) >= HOT_C]
+        return [j for j, i in JOINTS.items() if j not in DISABLED and self._r1(i, ADDR_TEMP) >= HOT_C]
 
     def close(self):
         self.port.closePort()
