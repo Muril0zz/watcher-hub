@@ -508,8 +508,10 @@ def start_sequence(intents: list, lang: str):
     threading.Thread(target=run_sequence, args=(intents, lang, arm.seq), daemon=True).start()
 
 
-def handle_text(text: str, lang_hint: str = "pt") -> dict:
-    """Any language: Claude picks the intents and the reply; the keyword parser is the offline fallback."""
+def handle_text(text: str, lang_hint: str = "pt", quiet: bool = False) -> dict:
+    """Any language: Claude picks the intents and the reply; the keyword parser is the offline fallback.
+    quiet: don't speak on the Mac (the Watcher answers out loud itself)."""
+    speak = (lambda *a, **k: None) if quiet else speech.speak
     text = text.strip()
     if not text:
         return {"heard": text, "intents": [], "say": ""}
@@ -524,7 +526,7 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
                "zh": "我还没准备好，暂时不能动。", "es": "Todavía no estoy listo para moverme."}
         say = msg.get((lang_hint or "pt")[:2], msg["en"])
         arm.log(f"heard: {text} -> refused, arm is {arm.status}", say=say)
-        speech.speak(say, lang_hint or "pt")
+        speak(say, lang_hint or "pt")
         return {"heard": text, "intents": [], "say": say, "spoken": True, "status": arm.status}
     # Fast path: short, plain commands the keyword parser fully understands run at once, no API round trip.
     intents = routing.fast_intents(text, lang_hint)
@@ -534,7 +536,7 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
         say = "Ok" if lang == "pt" else "OK"
         arm.lang = lang
         arm.log(f"heard: {text} -> fast {[i.name for i in intents]}", say=say)
-        speech.speak(say, lang)
+        speak(say, lang)
         return {"heard": text, "intents": [i.name for i in intents], "say": say, "spoken": True, "language": lang}
     t0 = time.time()
     try:
@@ -544,7 +546,7 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
         intents = parse(text).intents
         start_sequence(intents, lang_hint)
         say = "Ok" if intents else "Não entendi"
-        speech.speak(say, "pt")
+        speak(say, "pt")
         return {"heard": text, "intents": [i.name for i in intents], "say": say, "spoken": True}
     if not plan.get("for_robot", True):
         arm.log(f"ignored (not for the robot): {text}")
@@ -553,7 +555,7 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
     arm.lang = lang
     names = [i["name"] for i in plan["intents"]]
     arm.log(f"heard: {text} -> {lang} {names} ({time.time() - t0:.1f}s)", say=plan["reply"])
-    speech.speak(plan["reply"], lang)
+    speak(plan["reply"], lang)
     start_sequence([Intent(i["name"], amount=i["amount"], degrees=i["degrees"]) for i in plan["intents"]], lang)
     return {"heard": text, "intents": names, "say": plan["reply"], "spoken": True, "language": lang}
 
@@ -597,7 +599,44 @@ def camera_jpg():
     return Response(data or b"", media_type="image/jpeg", status_code=200 if data else 503)
 
 
+WATCHER_HEARD = re.compile(r"Application: >> (.+?)\s*$")
+WAKE_WORDS = {"marco", "你好小智", "小智", "hi esp", "hey marco"}
+
+
+def watcher_bridge():
+    """SenseCAP Watcher (XiaoZhi firmware) over USB: its console logs 'Application: >> <what it heard>'.
+    Feed those lines to the same brain; the Watcher's own assistant does the talking."""
+    import serial
+    from serial.tools import list_ports
+
+    while True:
+        ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == (0x1A86, 0x55D2)]
+        if not ports:
+            time.sleep(3)
+            continue
+        for dev in sorted(ports, reverse=True):  # the ESP32 console is the higher-numbered one
+            try:
+                with serial.Serial(dev, 115200, timeout=1) as port:
+                    arm.log(f"watcher bridge listening on {dev}")
+                    while True:
+                        line = port.readline().decode("utf-8", "replace")
+                        m = WATCHER_HEARD.search(line)
+                        if not m:
+                            continue
+                        heard = m.group(1).strip()
+                        if heard.lower().strip(" .!?。！") in WAKE_WORDS:
+                            continue
+                        lang = "zh" if re.search(r"[\u4e00-\u9fff]", heard) else "pt"
+                        arm.log(f"[watcher] {heard}")
+                        threading.Thread(target=handle_text, args=(heard, lang, True), daemon=True).start()
+            except Exception as e:  # unplugged, busy, reset: try again
+                arm.log(f"watcher bridge: {e}")
+                time.sleep(3)
+
+
 threading.Thread(target=speech.warm_up, daemon=True).start()
+if "--no-watcher" not in sys.argv:
+    threading.Thread(target=watcher_bridge, daemon=True).start()
 threading.Thread(target=claude_intents.keep_warm, daemon=True).start()
 
 if __name__ == "__main__":
