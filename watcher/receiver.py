@@ -14,11 +14,14 @@ Two modes, matching the two local output channels in the Watcher firmware:
                    USB-serial adapter. Enable "Serial Port / UART Output" on
                    the task. Each alarm arrives as one JSON line ending \\r\\n.
 
-  --voice [PORT]   Also read the Watcher's USB-C console and turn push-to-talk
-                   transcripts ("move the arm up/down/left/right") into
-                   voice events. Uses the Watcher's SenseCraft speech-to-text;
-                   PORT is auto-detected if omitted. control.py can't use
-                   that port while this runs.
+  --voice [PORT]   Also read the Watcher's USB-C console and turn every
+                   push-to-talk transcript into a voice event. Uses the
+                   Watcher's SenseCraft speech-to-text; PORT is auto-detected
+                   if omitted. control.py can't use that port while this runs.
+
+  --forward URL    POST each voice transcript to URL as JSON
+                   {"source": "voice", "text", "received_at"}. Repeatable.
+                   The receiver (e.g. the arm controller) interprets the text.
 
 Every event is printed, appended to data/events.jsonl, its image saved to
 data/images/, and passed to on_event() -- put your own logic there
@@ -28,6 +31,7 @@ Usage:
   python3 watcher/receiver.py                    # HTTP on 0.0.0.0:8887
   python3 watcher/receiver.py --port 9000 --token secret
   python3 watcher/receiver.py --voice                         # + voice commands
+  python3 watcher/receiver.py --voice --forward http://arm-host:5000/voice
   python3 watcher/receiver.py --mode uart --serial /dev/ttyUSB0   # pip install pyserial
 """
 import argparse
@@ -38,11 +42,13 @@ import re
 import sys
 import threading
 import time
+import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 IMG_DIR = os.path.join("data", "images")
 LOG_FILE = os.path.join("data", "events.jsonl")
+FORWARD_URLS: list[str] = []
 
 
 # --------------------------------------------------------------------------
@@ -52,18 +58,25 @@ def on_event(evt: dict) -> None:
     """Called once per Watcher alarm with a normalized event dict:
     {
       "source": "http" | "uart" | "voice",
-      "command": "arm_up" | "arm_down" | "arm_left" | "arm_right",   # voice only
       "received_at": ISO time on this computer,
       "device_eui": str | None,
       "timestamp_ms": int | None,        # device clock (HTTP only)
-      "text": str,                       # task prompt / alarm message
+      "text": str,                       # task prompt / alarm message / voice transcript
       "image_path": str | None,          # saved JPEG
       "sensor": {"temperature", "humidity", "CO2"} | {},   # HTTP only
       "inference": {...} | {},           # boxes/classes if present
       "raw": original payload without the base64 image
     }
     """
-    pass  # e.g. requests.post("http://arm-controller/trigger", json=evt)
+    if evt["source"] != "voice":
+        return
+    body = json.dumps({k: evt[k] for k in ("source", "text", "received_at")}).encode()
+    for url in FORWARD_URLS:
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=2).close()
+        except Exception as e:  # one dead listener must not block the others
+            print(f"forward to {url} failed: {e}", file=sys.stderr)
 
 
 # --------------------------------------------------------------------------
@@ -209,21 +222,12 @@ def run_uart(port: str, baud: int) -> None:
 # After push-to-talk the firmware logs "I (...) vi: sst_text: <transcript>".
 # --------------------------------------------------------------------------
 SST = re.compile(r"vi: sst_text: ?(.*)")
-DIRECTION = re.compile(r"\b(up|down|left|right)\b")
-
-
-def parse_command(text: str) -> str | None:
-    t = text.lower()
-    if "arm" not in t and "move" not in t:
-        return None
-    m = DIRECTION.search(t)
-    return f"arm_{m.group(1)}" if m else None
 
 
 def run_voice(port: str, baud: int) -> None:
     import serial  # pyserial
     ser = serial.Serial(port, baud, timeout=1)
-    print(f"Listening for voice commands on {port} (hold the wheel, speak, release)")
+    print(f"Listening for voice input on {port} (hold the wheel, speak, release)")
     buf = b""
     while True:
         buf += ser.read(ser.in_waiting or 1)
@@ -233,9 +237,7 @@ def run_voice(port: str, baud: int) -> None:
             if not m:
                 continue
             text = m.group(1).strip()
-            command = parse_command(text)
-            if not command:
-                print(f"(voice, not a command) {text!r}", flush=True)
+            if not text:
                 continue
             emit({
                 "source": "voice",
@@ -243,7 +245,6 @@ def run_voice(port: str, baud: int) -> None:
                 "device_eui": None,
                 "timestamp_ms": int(time.time() * 1000),
                 "text": text,
-                "command": command,
                 "image_path": None,
                 "sensor": {},
                 "inference": {},
@@ -261,7 +262,10 @@ if __name__ == "__main__":
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--voice", metavar="PORT", nargs="?", const="auto",
                     help="voice commands from the Watcher's USB-C console (port auto-detected if omitted)")
+    ap.add_argument("--forward", metavar="URL", action="append", default=[],
+                    help="POST each voice transcript to URL (repeatable)")
     a = ap.parse_args()
+    FORWARD_URLS.extend(a.forward)
     if a.voice == "auto":
         from control import find_console  # watcher/ is on sys.path when run as a script
         a.voice = find_console(a.baud)

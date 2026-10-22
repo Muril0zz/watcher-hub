@@ -6,9 +6,10 @@ Approach decided: **code-first**. Control the Watcher over its USB-C serial cons
 
 ## Layout
 - `watcher/control.py` — USB-C console client: load task flows (`load <preset|file.json>`), `export`, `battery`, `rgb`, `reboot`, `cmd`, `monitor`, `ports`. `build_flow()` makes preset flows.
-- `watcher/receiver.py` — HTTP server (default `0.0.0.0:8887`) for the Watcher's alarm POSTs; also `--mode uart` for the Grove port. Writes `data/events.jsonl` and `data/images/`. **Integration hook: `on_event(evt)`** — that is where forwarding to the arm / glasses goes.
+- `watcher/receiver.py` — HTTP server (default `0.0.0.0:8887`) for the Watcher's alarm POSTs; also `--mode uart` for the Grove port. Writes `data/events.jsonl` and `data/images/`. **Integration hook: `on_event(evt)`** — POSTs each voice transcript to the `--forward` URLs (webhook to the arm, which interprets the text).
 - `flows/*.json` — preset task flows (person, gesture, pet).
 - `tools/fake_watcher.py` — simulated Watcher (virtual serial console + fake HTTP pushes). Use it whenever the hardware is not plugged in.
+- `tools/ntfy_listen.py` — subscribes to the ntfy topic and prints voice transcripts (what the arm side sees).
 - `tests/test_end_to_end.py` — receiver + fake Watcher + control, no hardware.
 - `docs/taskflow-blocks-reference.md` — official parameters of every task-flow block.
 
@@ -20,8 +21,10 @@ python -m unittest discover -s tests -v      # run after every change
 python watcher/receiver.py                   # receive alarms
 python watcher/control.py ports
 python watcher/receiver.py --voice           # alarms + push-to-talk voice commands
+python watcher/receiver.py --voice --forward https://ntfy.sh/$WATCHER_TOPIC   # hosted relay to the arm (topic is secret, never commit it)
 python watcher/control.py battery            # console port auto-detected (-p PORT to override)
 python watcher/control.py load gesture
+python tools/ntfy_listen.py $WATCHER_TOPIC     # check the relay from any network
 python tools/fake_watcher.py --push http://127.0.0.1:8887   # no hardware
 ```
 
