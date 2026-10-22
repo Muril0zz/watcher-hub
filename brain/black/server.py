@@ -346,10 +346,11 @@ class Arm:
     def apply(self, intent: Intent, lang: str, camera: Camera) -> str:
         pt = lang != "en"
         s = self.state
-        step_pan = {"little": 10.0, "normal": 25.0, "max": PAN_LIMIT}[intent.amount]
+        # big on purpose: moves have to read from across a room (doubled for the demo)
+        step_pan = {"little": 20.0, "normal": 50.0, "max": PAN_LIMIT}[intent.amount]
         if intent.degrees:
             step_pan = intent.degrees
-        step_h = {"little": 0.1, "normal": 0.25, "max": 1.0}[intent.amount]
+        step_h = {"little": 0.2, "normal": 0.5, "max": 1.0}[intent.amount]
         sign = -1.0 if self.settings["invert"] else 1.0
         clamp = lambda v, lim: max(-lim, min(lim, v))
         name = intent.name
@@ -378,7 +379,7 @@ class Arm:
                     s["pan"] = clamp(s["pan"] + sign * direction * step_pan, PAN_LIMIT)
                 return ("Virando para a " + ("esquerda" if name == "left" else "direita")) if pt else f"Turning {name}"
             if name == "side":
-                s["pan"] = -45.0 if s["pan"] >= 0 else 45.0
+                s["pan"] = -80.0 if s["pan"] >= 0 else 80.0
                 return "Indo para o lado" if pt else "Going to the side"
             if name == "center":
                 s.update(pan=0.0, wflex=0.0, roll=0.0)
@@ -401,7 +402,7 @@ class Arm:
                     self.queue.append({"roll": r})
                 return "Girando o punho todo" if pt else "Turning the wrist all the way"
             if name in ("wrist_up", "wrist_down"):
-                d = 20.0 if name == "wrist_up" else -20.0
+                d = 40.0 if name == "wrist_up" else -40.0
                 s["wflex"] = clamp(s["wflex"] + d, WRIST_LIMIT)
                 return "Mexendo a mão" if pt else "Tilting the hand"
             if name == "spin":
@@ -409,7 +410,7 @@ class Arm:
                 return "Girando o punho" if pt else "Spinning the wrist"
             if name in ("wave", "shake", "nod"):
                 base = dict(s)
-                key, amp, times = {"wave": ("roll", 40, 3), "shake": ("roll", 35, 3), "nod": ("wflex", 25, 2)}[name]
+                key, amp, times = {"wave": ("roll", 70, 3), "shake": ("roll", 60, 3), "nod": ("wflex", 40, 2)}[name]
                 for _ in range(times):
                     self.queue.append({key: clamp(base[key] + amp, ROLL_LIMIT if key == "roll" else WRIST_LIMIT)})
                     self.queue.append({key: clamp(base[key] - amp, ROLL_LIMIT if key == "roll" else WRIST_LIMIT)})
