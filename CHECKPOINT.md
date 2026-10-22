@@ -17,7 +17,16 @@ Verified on hardware:
   (language and voice English). It answers in English, explains the arm, and confirms commands:
   ">> I want the arm to move up." → "<< Moving the arm up." (0.44 s).
 
+- **Wireless arm control over MCP** (replaces USB + ntfy). `tools/arm_mcp.py` connects to the agent's
+  MCP endpoint; "Marco, move the arm up" arrived as `tools/call move_arm {"direction": "up"}` →
+  `ARM: move up`. Now 8 tools (move, wrist, gripper, joint, poses, stop, free-text command).
+
 Not working / open:
+- **Arm owner: fill `arm(action, args)`** in `tools/arm_mcp.py` with SO-ARM101 code and run the
+  script on the arm's computer (stop the laptop copy). Share the MCP endpoint token privately.
+- Paste the updated `docs/xiaozhi-agent-role.md` on xiaozhi.me so the agent knows all 8 tools,
+  then test gripper / poses / stop by voice. Only `move_arm up` has been tested on hardware.
+- The endpoint token was pasted in a chat; regenerate it on xiaozhi.me if that matters.
 - "What time is it?" not tested yet.
 - **Keeps listening after each reply**, so room conversation is transcribed and forwarded until it
   goes idle. Click the wheel to end, or the arm must ignore text that isn't a command.

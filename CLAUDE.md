@@ -11,7 +11,8 @@ Approach decided: **code-first**. Control the Watcher over its USB-C serial cons
 - `flows/*.json` — preset task flows (person, gesture, pet).
 - `tools/fake_watcher.py` — simulated Watcher (virtual serial console + fake HTTP pushes). Use it whenever the hardware is not plugged in. `--say TEXT --xiaozhi` logs transcripts in the XiaoZhi format.
 - `tools/ntfy_listen.py` — subscribes to the ntfy topic and prints voice transcripts (what the arm side sees).
-- `tests/test_end_to_end.py` — receiver + fake Watcher + control, no hardware.
+- `tools/arm_mcp.py` — **wireless arm control (current path)**: connects out to the xiaozhi.me agent's MCP endpoint and gives the agent arm tools (`move_arm`, `rotate_wrist`, `tilt_wrist`, `gripper`, `set_joint`, `go_to_pose`, `stop_arm`, `arm_command`). Calls are checked against each tool's schema, then passed to **`arm(action, args)`, the integration hook** the arm owner fills with SO-ARM101 code (it only prints today). Add an action = add an entry to `TOOLS`. Endpoint from `MCP_ENDPOINT` or `data/mcp_endpoint.txt` (secret token, gitignored). Runs on the arm's computer; needs no USB and no open port.
+- `tests/test_end_to_end.py` — receiver + fake Watcher + control, no hardware. `tests/test_arm_mcp.py` — the MCP bridge's JSON-RPC and argument checks.
 - `docs/taskflow-blocks-reference.md` — official parameters of every task-flow block.
 
 ## Commands
@@ -28,6 +29,7 @@ python watcher/control.py battery            # console port auto-detected (-p PO
 python watcher/control.py load gesture
 python tools/ntfy_listen.py $WATCHER_TOPIC     # check the relay from any network
 python tools/fake_watcher.py --push http://127.0.0.1:8887   # no hardware
+python tools/arm_mcp.py                        # XiaoZhi agent -> arm tools over MCP (needs MCP_ENDPOINT or data/mcp_endpoint.txt)
 ```
 
 ## The device
@@ -52,7 +54,7 @@ python tools/fake_watcher.py --push http://127.0.0.1:8887   # no hardware
 - **Wake word "Marco"**: custom wake word on ESP-SR MultiNet7 English (`mn7_en`), threshold 20 %, detected on the device. Speech-to-text, LLM and TTS run on the server. Wake word only works from idle, not while listening. Before "Marco" the build used WakeNet `wn9_alexa` (config in `~/src/xiaozhi-esp32/sdkconfig.alexa.bak`).
 - Built with `python scripts/build.py sensecap-watcher --language en-US --wake-word wn9_alexa`, then `sdkconfig` switched to `CONFIG_USE_CUSTOM_WAKE_WORD=y`, `CONFIG_CUSTOM_WAKE_WORD="marco"`, `CONFIG_SR_MN_EN_MULTINET7_QUANT=y` and `idf.py build`. Configs and image hashes in `data/firmware-backup/xiaozhi/` (gitignored).
 - **No device-side AEC** for this board (not offered in Kconfig); AFE with VAD only. `SEND_WAKE_WORD_DATA=y`: the wake-word audio goes to the server, which echoes it as the first transcript.
-- **Server: xiaozhi.me** (`OTA_URL` = `https://api.tenclass.net/xiaozhi/ota/`, then MQTT `api.tenclass.net:8883`). Activated with a 6-digit code on the xiaozhi.me console. Reply language and voice are per agent in the xiaozhi.me console ("Configure role"), not in the firmware: the default agent answers in Chinese. The agent's role text (it knows about the arm and only confirms commands) is in `docs/xiaozhi-agent-role.md`. Self-hosting is possible with `xinnan-tech/xiaozhi-esp32-server`.
+- **Server: xiaozhi.me** (`OTA_URL` = `https://api.tenclass.net/xiaozhi/ota/`, then MQTT `api.tenclass.net:8883`). Activated with a 6-digit code on the xiaozhi.me console. Reply language and voice are per agent in the xiaozhi.me console ("Configure role"), not in the firmware: the default agent answers in Chinese. The agent's role text (it knows about the arm and its tools, calls them and confirms briefly) is in `docs/xiaozhi-agent-role.md`; paste it into Configure role after every change. **MCP endpoint**: Configure role → MCP Settings gives `wss://api.xiaozhi.me/mcp/?token=…`; xiaozhi.me is the MCP client and our script is the server (`initialize`, `tools/list`, `tools/call`, `ping`; `tools/call` params also carry `clientId`, `_meta`). Only one bridge per endpoint. This Mac has a system HTTPS proxy on 127.0.0.1 that breaks websockets, hence `proxy=None`; the Claude Code sandbox's proxy also blocks it, so run the bridge in a real terminal. Self-hosting is possible with `xinnan-tech/xiaozhi-esp32-server`.
 - Wi-Fi provisioning: device hotspot `Xiaozhi-5AFD`, page `http://192.168.4.1`, 2.4 GHz only. Holding the wheel ~10 s factory-resets XiaoZhi's NVS (Wi-Fi + activation).
 - **Console log** (115200, no prompt): user transcript `I (…) Application: >> <text>`, reply `Application: << <text>`, wake `Application: Wake word detected: Marco`, states `StateMachine: State: idle -> connecting -> listening -> speaking`. After a reply it goes back to listening, so nearby speech also gets transcribed until it goes idle (click the wheel to end).
 - Measured latency (device clock): wake word → listening 0.32 s, wake word → first reply text 1.25 s, end of speech → reply text ~0.4–0.5 s (SenseCraft: 5–8 s).
@@ -65,6 +67,6 @@ python tools/fake_watcher.py --push http://127.0.0.1:8887   # no hardware
 The console client was tested only against `tools/fake_watcher.py`. On first hardware run, check: which port has the console, that the prompt text matches, that a loaded flow actually runs, and that a real alarm reaches the receiver. If real console output differs, update `fake_watcher.py` to match so tests stay meaningful.
 
 ## Conventions
-- Python 3.10+, stdlib first; only dependency is `pyserial`.
+- Python 3.10+, stdlib first; dependencies are `pyserial` and `websockets` (MCP bridge only).
 - Keep `fake_watcher.py` in sync with real device behaviour and keep the end-to-end test green.
 - Work-related text in English.
