@@ -59,6 +59,13 @@ HSV = {
 }
 COLOR_NAMES = {"green": ("verde", "green"), "red": ("vermelho", "red"), "blue": ("azul", "blue"), "yellow": ("amarelo", "yellow")}
 HOME = {"pan": 0.0, "h": 1.0, "wflex": 0.0, "roll": 0.0, "grip": 50.0}
+# Free choreography ("keyframes"): each joint commanded directly, clamped here whatever Claude asks.
+# shoulder 0 = upper arm vertical, + leans forward; elbow -95 = forearm up, -45 = the bow's forearm:
+# shoulder <= 38 and elbow <= -40 keep the hand above the table (the bow is the lowest pose).
+FRAME_KEYS = {"base": "shoulder_pan", "shoulder": "shoulder_lift", "elbow": "elbow_flex",
+              "wrist": "wrist_flex", "roll": "wrist_roll", "hand": "gripper"}
+FRAME_LIMITS = {"shoulder_pan": (-95.0, 95.0), "shoulder_lift": (-30.0, 38.0), "elbow_flex": (-100.0, -40.0),
+                "wrist_flex": (-60.0, 60.0), "wrist_roll": (-170.0, 170.0), "gripper": (0.0, 100.0)}
 
 
 class StopShow(Exception):
@@ -136,6 +143,8 @@ class Arm:
         self.stop_requested = False
         self.hold = False  # frozen after touching something, until the next command
         self.seq = 0  # bumped by every new command: a running multi-step sequence stops when it changes
+        self.direct = None  # joint targets while playing keyframes (None = the simple state model)
+        self.frame_speed = None  # deg/s for the current keyframe
         self.lang = "pt"
         self.events = deque(maxlen=40)
         threading.Thread(target=self._run, daemon=True).start()
@@ -146,6 +155,8 @@ class Arm:
 
     # ---- state the loop walks toward -------------------------------------------------------
     def target_pose(self):
+        if self.direct is not None:
+            return dict(self.direct)
         s = self.state
         h = s["h"]
         lift = {j: LOW[j] + (SKY[j] - LOW[j]) * h for j in LOW}
@@ -262,7 +273,7 @@ class Arm:
                 self._run_show()
             with self.lock:
                 target = self.target_pose() if not self.hold else dict(self.cmd)
-                speed = self.settings["speed"]
+                speed = self.frame_speed if (self.direct is not None and self.frame_speed) else self.settings["speed"]
             new = {}
             for j in JOINTS:
                 cur, goal = self.cmd[j], target[j]
@@ -288,9 +299,22 @@ class Arm:
             arrived = all(abs(new[j] - target[j]) < 1.0 for j in JOINTS)
             if arrived and self.queue:
                 with self.lock:
-                    self.state.update(self.queue.popleft())
+                    frame = self.queue.popleft()
+                    if "direct" in frame:
+                        self._start_frame(frame)
+                    else:
+                        self.state.update(frame)
             self.status = "moving" if not arrived else "ready"
             time.sleep(1 / HZ)
+
+    def _start_frame(self, frame: dict):
+        """Next keyframe: joints not named keep their target; speed set so it lasts about frame['secs']."""
+        base = dict(self.direct or self.cmd)
+        goal = {**base, **frame["direct"]}
+        moves = [abs(goal[j] - self.cmd[j]) for j in JOINTS if j != "gripper"]
+        moves.append(abs(goal["gripper"] - self.cmd["gripper"]) / 3)  # the gripper runs 3x faster
+        self.frame_speed = max(15.0, min(160.0, max(moves) / frame["secs"]))
+        self.direct = goal
 
     def _guard_contact(self, before: dict, target: dict):
         """Straining hard while not moving toward the goal = touching something: freeze right there."""
@@ -366,14 +390,37 @@ class Arm:
             if self.hold and name != "stop":
                 # leave the frozen pose from where the arm actually is
                 self.hold = False
+            if self.direct is not None and name not in ("stop", "keyframes") and self.cmd:
+                # leaving a choreography: back to the simple model from where the arm is (standing)
+                cur = self.cmd
+                self.direct, self.frame_speed = None, None
+                self.queue.clear()
+                s.update(HOME)
+                s.update(pan=cur["shoulder_pan"], roll=cur["wrist_roll"], grip=cur["gripper"])
             if name != "stop" and self.queue:
                 # a new command cuts a gesture short: put the gesture's joint back where it ends
                 for frame in self.queue:
-                    s.update(frame)
+                    if "direct" not in frame:
+                        s.update(frame)
                 self.queue.clear()
+            if name == "keyframes":
+                if not self.cmd:
+                    return "Ainda não estou pronto" if pt else "Not ready yet"
+                self.direct, self.frame_speed = dict(self.cmd), None  # start from where it is now
+                for f in (intent.frames or [])[:40]:
+                    pose = {}
+                    for key, joint in FRAME_KEYS.items():
+                        if f.get(key) is not None:
+                            lo, hi = FRAME_LIMITS[joint]
+                            pose[joint] = max(lo, min(hi, float(f[key])))
+                    if pose:
+                        self.queue.append({"direct": pose, "secs": max(0.3, min(6.0, float(f.get("seconds") or 1.0)))})
+                return "Fazendo os movimentos" if pt else "Doing the moves"
             if name == "stop":
                 self.stop_requested = True
                 self.queue.clear()
+                if self.direct is not None and self.cmd:
+                    self.direct = dict(self.cmd)  # freeze the choreography where it is
                 cur = self.cmd or {}
                 if cur:
                     s.update(pan=cur["shoulder_pan"], roll=cur["wrist_roll"], grip=cur["gripper"])
@@ -526,6 +573,7 @@ CONFIRM = {  # short spoken confirmations for the instant path
     "shake": ("Não!", "No!"), "show": ("Lá vai o show!", "Showtime!"), "faster": ("Mais rápido", "Faster"),
     "slower": ("Mais devagar", "Slower"), "stop": ("Parei", "Stopped"), "wrist_up": ("Mão para cima", "Hand up"),
     "wrist_down": ("Mão para baixo", "Hand down"), "invert": ("Lados trocados", "Sides swapped"),
+    "keyframes": ("Fazendo os movimentos", "Doing the moves"),
 }
 
 
@@ -590,7 +638,8 @@ def handle_text(text: str, lang_hint: str = "pt", quiet: bool = False, addressed
     names = [i["name"] for i in plan["intents"]]
     arm.log(f"heard: {text} -> {lang} {names} ({time.time() - t0:.1f}s)", say=plan["reply"])
     speak(plan["reply"], lang)
-    start_sequence([Intent(i["name"], amount=i["amount"], degrees=i["degrees"]) for i in plan["intents"]], lang)
+    start_sequence([Intent(i["name"], amount=i["amount"], degrees=i["degrees"], frames=i.get("frames"))
+                    for i in plan["intents"]], lang)
     return {"heard": text, "intents": names, "say": plan["reply"], "spoken": True, "language": lang}
 
 

@@ -53,9 +53,21 @@ The black arm (SO-101 leader, 5 V / 3 A supply, no camera, a trigger instead of 
 | Wrist | tilt up/down, 90 deg turn, full roll |
 | Hand | open / close (weak trigger: it cannot hold objects) |
 | Gestures | wave, yes (nod), no (shake), dance/show, faster, slower |
+| Free movement: "make a snake", "go diagonal", "bend each joint one at a time", "draw an 8 in the air" | Claude writes its own choreography (up to 40 poses, each joint + duration); the server clamps every pose to the safe ranges |
 | Impossible asks ("bring me water", "make coffee") | kind refusal in the speaker's language + a "no" shake |
 
-**Measured**: 80/80 test phrases correct in pt, en, zh, Cantonese, es and hi (`test_phrases.py`, `test_phrases2.py`); noise tests 17/17 (`test_noise.py`). Latency from releasing the button: about 1 s for common commands, 2.5-3 s for free speech.
+**Named joints** (say them in any language, e.g. "move number 2 all the way down", "junta 3 pra cima e pra baixo"):
+
+| Name | Joint | Range used |
+| --- | --- | --- |
+| base | turns the whole arm | -95 (right) .. +95 (left) |
+| number 1 | shoulder | -30 (back) .. 0 (vertical) .. +38 (forward, lowest) |
+| number 2 | elbow | -100 (forearm up) .. -40 (forearm down) |
+| number 3 | wrist bend | -60 (down) .. +60 (up) |
+| number 4 | wrist turn | -170 .. +170 |
+| hand | open / close | 0 closed .. 100 open |
+
+**Measured**: 80/80 test phrases correct in pt, en, zh, Cantonese, es and hi (`test_phrases.py`, `test_phrases2.py`); free-movement phrases 10/10 (`test_keyframes.py`, checked offline, not yet on the real arm); noise tests 17/17 (`test_noise.py`). Latency from releasing the button: about 1 s for common commands, 2.5-3 s for free speech.
 
 **Safety built in**: rising moves are staged (forearm first, then shoulder) and speed-capped so the 5 V supply does not brown out; a contact guard freezes the arm if a joint strains without moving for ~0.6 s; the server refuses out loud ("I'm not ready to move yet") instead of pretending when the arm is not ready; after a brownout it stands back up by itself.
 

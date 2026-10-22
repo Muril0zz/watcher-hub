@@ -43,6 +43,7 @@ class Intent:
     amount: str = "normal"  # little | normal | max
     degrees: float | None = None
     color: str | None = None
+    frames: list | None = None  # "keyframes": Claude's own choreography, one pose per entry
 
 
 @dataclass

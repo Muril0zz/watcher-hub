@@ -16,7 +16,8 @@ MODEL = os.environ.get("ARM_MODEL", "claude-haiku-5-5")
 ENV_FILE = Path.home() / ".config" / "claude-brain" / ".env"
 
 INTENTS = ["stop", "show", "wave", "nod", "shake", "home", "center", "left", "right", "side", "up", "down",
-           "open", "close", "spin", "roll_full", "wrist_up", "wrist_down", "faster", "slower", "invert"]
+           "open", "close", "spin", "roll_full", "wrist_up", "wrist_down", "faster", "slower", "invert",
+           "keyframes"]
 
 SYSTEM = """You control a small robot arm (SO-101, 6 joints, on a table) that keeps elderly people company.
 People talk to it in any language, with any wording, slang or typos. Turn what they want into a list of
@@ -31,6 +32,24 @@ Moves are deliberately big so an audience can see them; only use "little" when t
 - spin: turn the wrist 90 deg. roll_full: turn the wrist completely one way then the other.
 - open / close: the hand (a weak trigger, it cannot hold objects).
 - wave (hello/goodbye), nod (yes), shake (no), show (a dance/show), faster / slower (speed), stop, invert (swap left/right).
+- keyframes: FREE CONTROL of every joint, for ANY movement the intents above don't cover exactly: one joint at
+  a time, a numbered joint, diagonals, a snake/wave motion, bending or twisting, a figure, a made-up dance, a pose
+  the person describes. Fill "frames": poses played in order, each with the joints to move (null = keep it) and
+  "seconds" for that step (fast 0.5, normal 1.2, slow 2.5). Max 40 frames. People name the joints like this:
+    base = turns the whole arm: POSITIVE = LEFT (+95), 0 = front, NEGATIVE = RIGHT (-95), same as left/right
+    number 1 / joint 1 = shoulder: -30 (leaning back) .. 0 (upper arm vertical) .. +38 (leaning forward, lowest)
+    number 2 / joint 2 = elbow: -100 (forearm folded up, pointing at the ceiling) .. -40 (forearm down, lowest)
+    number 3 / joint 3 = wrist bend: -60 (hand down) .. 0 (straight) .. +60 (hand up)
+    number 4 / joint 4 = wrist turn: -170 .. +170 (end to end is a full turn)
+    hand = gripper: 0 closed .. 100 open
+  "up"/"down" on 1 or 2 raises/lowers that segment; "all the way" = the end of its range; "a bit" ~15 from
+  where it is; otherwise ~40% of the range. These ranges are safe (the table is never reached); stay inside them.
+  "Every joint"/"each joint" = all six: base, 1, 2, 3, 4 and hand. "One joint at a time" = each frame changes ONE joint. "Back and forth" = alternate the two ends. A snake =
+  frames where base, 1, 3 and 4 swing in alternating directions. Don't add a final "go back" frame unless asked.
+  Requests made only of the simple moves (left, right, up, down, center, wave, open, spin..., also several in a
+  row like "all the way right then all the way left") use the simple intents, NOT keyframes. Use keyframes
+  when a joint is named or numbered, or for diagonals, snakes, figures, bends, or anything the simple moves can't do.
+  For every intent other than keyframes, frames is null.
 
 The arm has NO camera and cannot see, pick up, carry, push or fetch anything, cannot leave the table, and
 cannot do household tasks. For those: possible=false, explain kindly in one sentence, and use [shake].
@@ -49,7 +68,17 @@ Be strict: only for_robot=true when it is plausibly an instruction or a question
 Unclear speech that does look like it was meant for the robot: possible=false, ask to repeat, intents [].
 
 reply: one short warm sentence in the SAME language and script the person used (Chinese -> Simplified Chinese).
+Never switch language: Portuguese words (articulação, cada, vez, junta, cobrinha) mean a Portuguese reply.
 language: ISO code (pt, en, zh, yue, es, hi, ...)."""
+
+_NUM = {"anyOf": [{"type": "number"}, {"type": "null"}]}
+FRAME = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["base", "shoulder", "elbow", "wrist", "roll", "hand", "seconds"],
+    "properties": {"base": _NUM, "shoulder": _NUM, "elbow": _NUM, "wrist": _NUM, "roll": _NUM, "hand": _NUM,
+                   "seconds": {"type": "number"}},
+}
 
 SCHEMA = {
     "type": "object",
@@ -65,11 +94,12 @@ SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["name", "amount", "degrees"],
+                "required": ["name", "amount", "degrees", "frames"],
                 "properties": {
                     "name": {"type": "string", "enum": INTENTS},
                     "amount": {"type": "string", "enum": ["little", "normal", "max"]},
                     "degrees": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+                    "frames": {"anyOf": [{"type": "array", "items": FRAME}, {"type": "null"}]},
                 },
             },
         },
@@ -111,7 +141,7 @@ def plan(text: str, addressed: bool = False) -> dict:
     text = text + speech_hint(text) + (ADDRESSED_NOTE if addressed else "")
     resp = client().messages.create(
         model=MODEL,
-        max_tokens=1024,
+        max_tokens=4000,  # a 40-frame choreography is ~3k tokens
         system=SYSTEM,
         output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
         messages=[{"role": "user", "content": text}],
