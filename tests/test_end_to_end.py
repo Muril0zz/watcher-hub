@@ -121,6 +121,14 @@ class EndToEnd(unittest.TestCase):
 
 class Voice(unittest.TestCase):
     def test_voice_forwarded_to_webhook(self):
+        self.check_forwarded([])
+
+    def test_xiaozhi_voice_forwarded_to_webhook(self):
+        received = self.check_forwarded(["--xiaozhi"])
+        # Neither the wake-word echo (">> Alexa.") nor the reply ("<<") is forwarded.
+        self.assertTrue(all(r["text"] == "Move the arm to the left." for r in received))
+
+    def check_forwarded(self, fake_args: list) -> list:
         received = []
 
         class Arm(BaseHTTPRequestHandler):
@@ -137,7 +145,7 @@ class Voice(unittest.TestCase):
         tmp = tempfile.mkdtemp()
         fake = subprocess.Popen(
             [PY, "-u", os.path.join(ROOT, "tools", "fake_watcher.py"),
-             "--say", "Move the arm to the left.", "--every", "0.5"],
+             "--say", "Move the arm to the left.", "--every", "0.5", *fake_args],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         serial_port = fake.stdout.readline().strip().split()[-1]
         receiver = subprocess.Popen(
@@ -158,11 +166,12 @@ class Voice(unittest.TestCase):
             self.assertEqual(evt["source"], "voice")
             self.assertEqual(evt["text"], "Move the arm to the left.")
             for _ in range(30):
-                if received:
+                if len(received) >= 2:  # the fake repeats every 0.5 s
                     break
                 time.sleep(0.1)
             self.assertEqual(received[0]["source"], "voice")
             self.assertEqual(received[0]["text"], "Move the arm to the left.")
+            return received
         finally:
             arm.shutdown()
             arm.server_close()

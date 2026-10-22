@@ -18,6 +18,9 @@ Two modes, matching the two local output channels in the Watcher firmware:
                    push-to-talk transcript into a voice event. Uses the
                    Watcher's SenseCraft speech-to-text; PORT is auto-detected
                    if omitted. control.py can't use that port while this runs.
+                   Also reads XiaoZhi firmware transcripts (after the wake
+                   word); give PORT explicitly there, since auto-detect looks
+                   for the SenseCraft prompt.
 
   --forward URL    POST each voice transcript to URL as JSON
                    {"source": "voice", "text", "received_at"}. Repeatable.
@@ -220,15 +223,20 @@ def run_uart(port: str, baud: int) -> None:
 # --------------------------------------------------------------------------
 # Voice mode  (firmware log over the USB-C console, 115200)
 # After push-to-talk the firmware logs "I (...) vi: sst_text: <transcript>".
+# XiaoZhi logs "I (...) Application: >> <transcript>" (its replies are "<<").
+# It also sends the wake-word audio to the server, so the first transcript after
+# "Wake word detected: Alexa" is just "Alexa"; that one is dropped.
 # --------------------------------------------------------------------------
-SST = re.compile(r"vi: sst_text: ?(.*)")
+SST = re.compile(r"vi: sst_text: ?(?P<sst_text>.*)|Application: >> (?P<xiaozhi>.*)"
+                 r"|Wake word detected: (?P<wake>[^(]+)")
 
 
 def run_voice(port: str, baud: int) -> None:
     import serial  # pyserial
     ser = serial.Serial(port, baud, timeout=1)
-    print(f"Listening for voice input on {port} (hold the wheel, speak, release)")
+    print(f"Listening for voice input on {port} (SenseCraft: hold the wheel; XiaoZhi: wake word)")
     buf = b""
+    wake = None
     while True:
         buf += ser.read(ser.in_waiting or 1)
         while b"\n" in buf:
@@ -236,7 +244,14 @@ def run_voice(port: str, baud: int) -> None:
             m = SST.search(re.sub(r"\x1b\[[0-9;]*m", "", line.decode(errors="replace")))
             if not m:
                 continue
-            text = m.group(1).strip()
+            text = m.group(m.lastgroup).strip()
+            if m.lastgroup == "wake":
+                wake = re.sub(r"\W", "", text).casefold()
+                continue
+            if m.lastgroup == "xiaozhi" and wake is not None:
+                said, expected, wake = re.sub(r"\W", "", text).casefold(), wake, None
+                if said == expected:
+                    continue
             if not text:
                 continue
             emit({
@@ -248,7 +263,7 @@ def run_voice(port: str, baud: int) -> None:
                 "image_path": None,
                 "sensor": {},
                 "inference": {},
-                "raw": {"sst_text": text},
+                "raw": {m.lastgroup: text},
             })
 
 

@@ -14,7 +14,8 @@ makes the fake device POST a fake alarm (same JSON as the real firmware)
 to <url>/v1/notification/event every --every seconds.
 
 With --say "move the arm up", the console also logs that push-to-talk
-transcript every --every seconds (for receiver.py --voice).
+transcript every --every seconds (for receiver.py --voice). Add --xiaozhi to
+log it the way the XiaoZhi firmware does instead.
 """
 import argparse
 import base64
@@ -115,11 +116,19 @@ def console(master: int) -> None:
                 out("SenseCAP> ")
 
 
-def speaker(master: int, text: str, every: float) -> None:
-    # Same shape as the real push-to-talk log line (green ANSI colour included).
+def speaker(master: int, text: str, every: float, xiaozhi: bool) -> None:
+    # Same shape as the real log lines: SenseCraft push-to-talk (green ANSI colour
+    # included), or XiaoZhi's wake word, its echo, the transcript and the reply.
     while True:
         time.sleep(every)
-        os.write(master, f"\x1b[0;32mI (1) vi: sst_text: {text}\x1b[0m\r\n".encode())
+        if xiaozhi:
+            os.write(master, ("I (1) Application: Wake word detected: Alexa (state: 3)\r\n"
+                              "I (1) Application: Wake word detected: Alexa\r\n"
+                              "I (1) Application: >> Alexa.\r\n"
+                              f"I (1) Application: >> {text}\r\n"
+                              "I (1) Application: << OK.\r\n").encode())
+        else:
+            os.write(master, f"\x1b[0;32mI (1) vi: sst_text: {text}\x1b[0m\r\n".encode())
 
 
 def main() -> None:
@@ -127,6 +136,7 @@ def main() -> None:
     ap.add_argument("--push", help="receiver base URL, e.g. http://127.0.0.1:8887")
     ap.add_argument("--every", type=float, default=5.0)
     ap.add_argument("--say", help="log this push-to-talk transcript every --every seconds")
+    ap.add_argument("--xiaozhi", action="store_true", help="log --say in the XiaoZhi firmware format")
     a = ap.parse_args()
     master, slave = pty.openpty()
     print(f"Fake Watcher console on {os.ttyname(slave)}", flush=True)
@@ -134,7 +144,7 @@ def main() -> None:
         threading.Thread(target=pusher, args=(a.push, a.every), daemon=True).start()
         print(f"Pushing alarms to {a.push} every {a.every}s once an http-alarm flow is loaded", flush=True)
     if a.say:
-        threading.Thread(target=speaker, args=(master, a.say, a.every), daemon=True).start()
+        threading.Thread(target=speaker, args=(master, a.say, a.every, a.xiaozhi), daemon=True).start()
     try:
         console(master)
     except KeyboardInterrupt:

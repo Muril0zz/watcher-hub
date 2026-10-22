@@ -1,5 +1,29 @@
 # Checkpoint: 2026-10-22
 
+## XiaoZhi firmware (branch `xiaozhi`) — current state of the device
+The Watcher now runs open-source **XiaoZhi** (`78/xiaozhi-esp32` v2.5.2, ESP-IDF v6.1) instead of
+SenseCraft. Details, build and restore steps: CLAUDE.md → "XiaoZhi firmware".
+
+Verified on hardware:
+- Boots without panic; joins Wi-Fi (hotspot `Xiaozhi-5AFD` provisioning); activated on xiaozhi.me.
+- **Wake word "Marco"** (custom, MultiNet7 English) triggers a conversation; no wheel needed.
+  First tested with "Alexa" (WakeNet) at 0.32 s wake → listening, 1.25 s wake → first reply text.
+- **Voice → ntfy.** `receiver.py --voice <port> --forward https://ntfy.sh/$WATCHER_TOPIC` forwards
+  each XiaoZhi transcript as `{"source": "voice", "text", "received_at"}`; the wake-word echo and the
+  device's own replies are not forwarded. Read back from ntfy: "Yeah, I want you to move the arm up."
+- nvsfactory (0x9000) verified unchanged after every flash; full backup in `data/firmware-backup/`.
+
+Not working / open:
+- **Replies are in Chinese**: set the agent's language and voice to English on xiaozhi.me →
+  Console → Configure role. The "What time is it?" test with an English answer is still to do.
+- **Keeps listening after each reply**, so room conversation is transcribed and forwarded until it
+  goes idle. Click the wheel to end, or the arm must ignore text that isn't a command.
+- Start speaking ~0.5 s after the wake word, or the first word is cut ("The arm up.").
+- SenseCraft-only features below (task flows, HTTP/UART alarms, push-to-talk, `control.py`) don't
+  work on XiaoZhi. Restore the full backup to get them back.
+
+## SenseCraft firmware (before XiaoZhi)
+
 ## Working on real hardware
 - **Voice commands → events.** Hold the Watcher's wheel, say "Move the arm up/down/left/right", release.
   `receiver.py --voice` reads the transcript from the USB console log (`vi: sst_text:`) and emits
