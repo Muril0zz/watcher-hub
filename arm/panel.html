@@ -1,0 +1,1689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SO-101 Panel</title>
+<style>
+  :root { --bg:#f6f6f4; --card:#fff; --ink:#1b1b1b; --muted:#6b6b6b; --line:#e2e2de; --accent:#2f6fde; --warn:#c2410c; --ok:#15803d; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141414; --card:#1e1e1e; --ink:#eee; --muted:#9a9a9a; --line:#333; --accent:#6b9cff; --warn:#fb923c; --ok:#4ade80; }
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.4 system-ui, sans-serif; }
+  main { max-width:1200px; margin:0 auto; padding:24px 16px 48px; }
+  .layout { display:grid; grid-template-columns:minmax(0, 1fr); gap:20px; }
+  @media (min-width:1000px) { .layout { grid-template-columns:minmax(0, 1.2fr) minmax(0, 1fr); align-items:start; } .cam { position:sticky; top:16px; } }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.45; cursor:default; }
+  select { font:inherit; padding:7px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); flex:1; min-width:0; }
+  .status { margin-left:auto; font-weight:600; }
+  .status.on { color:var(--ok); } .status.off { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 16px; }
+  .cam { padding:12px 16px 16px; }
+  .cam-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  .cam-bar label { color:var(--muted); display:flex; gap:6px; align-items:center; }
+  .video-wrap { position:relative; aspect-ratio:16 / 9; background:#000; border-radius:8px; overflow:hidden; }
+  video { width:100%; height:100%; object-fit:contain; display:block; }
+  video.mirror { transform:scaleX(-1); }
+  #camhint { position:absolute; inset:0; display:grid; place-items:center; color:#aaa; font-size:14px; text-align:center; padding:16px; }
+  #overlay { position:absolute; inset:0; width:100%; height:100%; cursor:crosshair; }
+  .track-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px; color:var(--muted); }
+  .track-bar label { display:flex; gap:6px; align-items:center; }
+  .swatch { width:24px; height:24px; border-radius:6px; border:1px solid var(--line); background:repeating-linear-gradient(45deg, var(--line) 0 4px, transparent 4px 8px); }
+  button.following { background:var(--ok); border-color:var(--ok); color:#fff; }
+  #tstatus { flex-basis:100%; font-size:13px; }
+  .cmd { padding:12px 16px; margin-bottom:16px; }
+  .cmd form { display:flex; gap:8px; }
+  .cmd input { flex:1; min-width:0; font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); }
+  #cmdlog { margin-top:8px; font:12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color:var(--muted); white-space:pre-wrap; min-height:1.5em; }
+  #cmdlog .bad { color:var(--warn); }
+  .voice-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; color:var(--muted); }
+  .voice-bar label { display:flex; gap:6px; align-items:center; }
+  button.listening { background:var(--warn); border-color:var(--warn); color:#fff; }
+  #heard { flex-basis:100%; font-style:italic; min-height:1.4em; }
+
+  /* ---- Simple mode: large, high-contrast, few choices (for older users) ---- */
+  .topbar { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  #simple { display:none; }
+  body.simple .layout, body.simple .sub, body.simple h1 { display:none; }
+  body.simple #simple { display:block; }
+  body.simple main { max-width:900px; }
+  #simple { font-size:24px; }
+  .s-status { font-size:30px; font-weight:700; margin:8px 0 16px; }
+  .s-status.on { color:var(--ok); } .s-status.off { color:var(--warn); }
+  .s-mic { width:100%; font-size:30px; padding:26px; border-radius:18px; margin-bottom:12px; }
+  .s-heard { font-size:26px; min-height:1.6em; margin-bottom:6px; }
+  .s-reply { font-size:24px; color:var(--muted); min-height:1.5em; margin-bottom:18px; }
+  .s-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
+  .s-grid button { font-size:26px; padding:24px 12px; border-radius:16px; border-width:2px; min-height:96px; }
+  .s-grid button.s-stop { background:#c62828; border-color:#c62828; color:#fff; font-weight:800; }
+  .s-hint { font-size:20px; color:var(--muted); margin-top:18px; }
+  .s-sub { font-size:24px; margin:26px 0 12px; }
+  .placelist { margin-top:6px; font-size:13px; color:var(--muted); }
+  .row { display:grid; grid-template-columns:120px 1fr 96px; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:none; }
+  .name { font-weight:600; font-size:14px; }
+  .steps { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  .deg { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+  .blocked { color:var(--warn); font-size:11px; font-weight:700; display:block; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .speed { display:flex; gap:12px; align-items:center; margin:16px 0; color:var(--muted); }
+  .speed input { flex:1; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px; overflow-x:auto; font-size:13px; min-height:2.4em; }
+  .err { color:var(--warn); min-height:1.4em; }
+  @media (max-width:480px) { .row { grid-template-columns:1fr 80px; } .row input { grid-column:1 / -1; grid-row:2; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="topbar">
+    <h1>SO-101 follower</h1>
+    <button id="simpletoggle">👵 Simple mode</button>
+  </div>
+  <!-- Simple mode (Spanish, for the older users the project is for): big buttons, big text, voice first. -->
+  <section id="simple" lang="es">
+    <div class="s-status off" id="s-status">El robot está apagado</div>
+    <button class="primary s-mic" id="s-mic">🎤 Hablarle al robot</button>
+    <div class="s-heard" id="s-heard"></div>
+    <div class="s-reply" id="s-reply">Toque el micrófono y hable. Por ejemplo: "abrí la mano". Si pasa un rato en silencio, diga "robot" primero.</div>
+    <div class="s-grid">
+      <button data-say="robot activa">⚡ Encender</button>
+      <button data-say="robot abri la mano">✋ Abrir la mano</button>
+      <button data-say="robot cerra la mano">✊ Cerrar la mano</button>
+      <button data-say="robot gira a la izquierda">⬅️ Izquierda</button>
+      <button data-say="robot gira a la derecha">➡️ Derecha</button>
+      <button data-say="robot levanta el brazo">⬆️ Subir el brazo</button>
+      <button data-say="robot baja el brazo">⬇️ Bajar el brazo</button>
+      <button data-say="robot saluda">👋 Saludar</button>
+      <button data-say="robot descansa">🏠 Descansar</button>
+      <button class="s-stop" data-say="para">🛑 PARAR</button>
+    </div>
+    <h3 class="s-sub">Cosas que me puede pedir</h3>
+    <div class="s-grid" id="s-places"></div>
+    <p class="s-hint" id="s-places-hint">Todavía no aprendí ningún lugar. Para enseñarme, lleve el brazo hasta el objeto y diga:
+      <b>"guardá esta posición como vaso"</b>. Y donde quiere que se lo deje: <b>"guardá esta posición como entrega"</b>.</p>
+    <p class="s-hint">Si se equivoca o se asusta, diga <b>"pará"</b> o toque <b>PARAR</b>: el robot se queda quieto.</p>
+  </section>
+  <p class="sub">Torque off: place the arm by hand and let it rest on its own. "Enable torque" takes that pose as the
+  base: sliders read 0 there, and "Rest &amp; release" brings the arm back to it before letting go.
+  Don't hold the arm in the air when enabling, or the base will be mid-air.</p>
+  <div class="layout">
+    <section class="card cam">
+      <div class="cam-bar">
+        <select id="camsel" aria-label="Camera"><option value="">Default camera</option></select>
+        <button id="camtoggle">Start camera</button>
+        <label><input type="checkbox" id="mirror"> Mirror</label>
+      </div>
+      <div class="video-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="camhint">Camera off. Use your iPhone (Continuity Camera) or the built-in camera.</div>
+      </div>
+      <div class="track-bar">
+        <label>Track <select id="tsource"><option value="color">Color</option><option value="hand">Hand</option></select></label>
+        <span class="swatch" id="swatch" title="Tracked color"></span>
+        <button id="follow" disabled>Follow: off</button>
+        <label><input type="checkbox" id="tpinch"> Pinch → gripper</label>
+        <button id="fcal" disabled>Calibrate fingers</button>
+        <label><input type="checkbox" id="ffingers" disabled> Fingers → 5 motors</label>
+        <label>Range <input type="range" id="trange" min="15" max="90" step="5" value="45"> <span id="trangev">45°</span></label>
+        <label><input type="checkbox" id="tinvert"> Invert direction</label>
+        <span id="tstatus">Start the camera, then click the object in the video to pick its color.</span>
+      </div>
+      <div class="track-bar">
+        <label>Find the cup by <select id="vsource"><option value="ai">AI ("cup")</option><option value="color">Color (click it)</option></select></label>
+        <button id="vsearch">👀 Save search pose</button>
+        <button id="vmark">📍 Mark cup</button>
+        <button id="vrelease">✋ Release here</button>
+        <button id="vgrasp" disabled>🤏 Save grasp</button>
+        <button id="vreset">Reset calibration</button>
+        <span id="vstatus">Vision grasping: not calibrated.</span>
+      </div>
+    </section>
+    <section>
+      <div class="bar">
+        <button id="on" class="primary">Enable torque</button>
+        <button id="ready">Ready pose</button>
+        <button id="off">Rest &amp; release</button>
+        <button id="copy">Copy pose</button>
+        <span id="status" class="status off">torque off</span>
+      </div>
+      <div class="card cmd">
+        <form id="cmdform" autocomplete="off">
+          <input id="cmd" aria-label="Command" placeholder='e.g. "motor 1 a 30", "abre la pinza 50%", "codo +15", "activa"'>
+          <button class="primary">Send</button>
+        </form>
+        <div class="voice-bar">
+          <button type="button" id="mic">🎤 Start listening</button>
+          <select id="lang" aria-label="Voice language">
+            <option value="es-AR">Español (AR)</option><option value="es-MX">Español (MX)</option>
+            <option value="es-ES">Español (ES)</option><option value="en-US">English (US)</option>
+          </select>
+          <label><input type="checkbox" id="speakback" checked> Speak back</label>
+          <label><input type="checkbox" id="wake" checked> Wake word "robot"</label>
+          <label><input type="checkbox" id="swaplr"> Swap left/right</label>
+          <span id="heard"></span>
+        </div>
+        <div id="cmdlog"></div>
+        <div id="placelist" class="placelist"></div>
+      </div>
+      <div class="card" id="joints"></div>
+      <div class="speed">Speed <input id="speed" type="range" min="50" max="1000" step="50"> <span id="speedv"></span></div>
+      <pre id="pose">Click "Copy pose" to get a SEQUENCE line for secuencia.py</pre>
+      <div class="err" id="err"></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let torque = false, built = false, busy = false, lastSent = {};
+const active = new Set();  // sliders the user is currently dragging
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+function showError(e) {
+  $("err").textContent = e ? String(e.message || e) : "";
+  if (e) remoteLog(`error shown: ${e.message || e}`);
+}
+// Mirrors what the page is doing into the panel's terminal (for remote debugging).
+// A message identical to the previous one is not repeated (a 4 Hz poll error would flood the log).
+let lastRemoteLog = null, repeats = 0;
+function remoteLog(msg) {
+  if (msg === lastRemoteLog) { repeats++; return; }
+  if (repeats) msg = `(previous message repeated ${repeats} more times) | ${msg}`;
+  lastRemoteLog = msg.replace(/^\(previous message repeated \d+ more times\) \| /, "");
+  repeats = 0;
+  fetch("/api/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ msg }) }).catch(() => {});
+}
+remoteLog(`page loaded (${navigator.userAgent.match(/(Chrome|Safari|Firefox)\/[\d.]+/)?.[0] || "unknown browser"}), speech API: ${!!(window.SpeechRecognition || window.webkitSpeechRecognition)}`);
+
+function build(joints) {
+  for (const [name, j] of Object.entries(joints)) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<div><div class="name">${name}</div><div class="steps" id="s-${name}"></div></div>
+      <input type="range" id="r-${name}" min="${j.min}" max="${j.max}" step="1">
+      <div class="deg"><span id="d-${name}"></span><span class="blocked" id="b-${name}"></span></div>`;
+    $("joints").appendChild(row);
+    const input = row.querySelector("input");
+    input.addEventListener("pointerdown", () => active.add(name));
+    input.addEventListener("input", () => send(name, input.value));
+    input.addEventListener("change", () => { lastSent[name] = 0; send(name, input.value); });  // final value
+  }
+  window.addEventListener("pointerup", () => active.clear());
+  built = true;
+}
+
+function send(name, deg) {
+  if (busy) return;  // never queue slider moves behind a long action
+  const now = Date.now();
+  if (now - (lastSent[name] || 0) < 60) return;  // throttle while dragging
+  lastSent[name] = now;
+  api("/api/target", { joint: name, deg: Number(deg) }).then(() => showError(), showError);
+}
+
+function render(s) {
+  if (!built) build(s.joints);
+  if (s.power_drops > (window.lastState?.power_drops ?? s.power_drops)) {
+    showError("⚡ Power cut: the 12V supply dropped and all motors rebooted (torque is off). Check the 12V adapter, outlet and connector.");
+  }
+  if (window.lastState && s.auto_rest && s.auto_rest !== window.lastState.auto_rest) {
+    // The server put the arm to rest on its own (motor protection): say why.
+    macroAbort = true;
+    logCommand(`auto rest: ${s.auto_rest}`);
+    speakText(s.auto_rest.startsWith("hot") ? "Me calenté un poco. Vuelvo a descansar para enfriarme."
+      : "Como no me necesita, vuelvo a descansar.");
+  }
+  torque = s.torque;
+  const maxT = Math.max(0, ...Object.values(s.temps || {}).filter(Number.isFinite));
+  const warm = maxT >= s.hot_c - 10;
+  $("s-status").textContent = (torque ? "El robot está encendido" : "El robot está apagado") + (warm ? " (está caliente)" : "");
+  $("s-status").className = "s-status " + (torque && !warm ? "on" : "off");
+  const alarms = Object.entries(s.alarms || {}).map(([j, a]) => `${j}: ${a.join("/")}`);
+  $("status").textContent = (busy ? "moving..." : torque ? "torque ON" : "torque off") + (maxT ? ` · ${maxT}°C` : "")
+    + (alarms.length ? ` · ⚠ ${alarms.join(", ")}` : "");
+  if (alarms.join() !== (window.lastAlarms || "")) {
+    if (alarms.length) logCommand(`⚠ motor alarm: ${alarms.join(", ")}`, true);
+    window.lastAlarms = alarms.join();
+  }
+  $("status").className = "status " + (torque ? "on" : "off");
+  $("on").disabled = torque || busy; $("off").disabled = !torque || busy; $("ready").disabled = !torque || busy;
+  if (document.activeElement !== $("speed")) { $("speed").value = s.speed; }
+  $("speedv").textContent = $("speed").value + " steps/s";
+  for (const [name, j] of Object.entries(s.joints)) {
+    const input = $("r-" + name);
+    input.min = j.min; input.max = j.max;  // ranges move with the base pose
+    input.disabled = !torque || busy;
+    // Torque off: the slider mirrors the real joint. Torque on: it shows the target being held.
+    if (!active.has(name)) input.value = torque ? j.target : j.deg;
+    $("d-" + name).textContent = j.deg.toFixed(0) + "°";
+    $("b-" + name).textContent = j.blocked ? "BLOCKED" : "";
+    $("s-" + name).textContent = j.steps + " steps";
+  }
+  window.lastState = s;
+}
+
+async function poll() {
+  try {
+    render(await api("/api/state"));
+    if (lastRemoteLog?.startsWith("error shown")) remoteLog("connection to the arm is back");
+  } catch (e) { showError(e); }
+  setTimeout(poll, 250);
+}
+
+async function longAction(path, body) {
+  if (busy) return;
+  busy = true;
+  if (window.lastState) render(window.lastState);  // disable the controls right away
+  try { const r = await api(path, body); showError(r.blocked && r.blocked.length ? "Blocked: " + r.blocked.join(", ") : ""); }
+  catch (e) { showError(e); }
+  finally { busy = false; }
+}
+
+$("on").onclick = () => longAction("/api/torque", { on: true });
+$("off").onclick = () => longAction("/api/torque", { on: false });
+$("ready").onclick = () => longAction("/api/ready", {});
+$("speed").oninput = () => api("/api/speed", { value: Number($("speed").value) }).catch(showError);
+$("copy").onclick = () => {
+  const s = window.lastState; if (!s) return;
+  const parts = Object.entries(s.joints).map(([n, j]) => `"${n}": ${Math.round(j.deg)}`);
+  const line = `("pose", {${parts.join(", ")}}),`;
+  $("pose").textContent = line;
+  navigator.clipboard?.writeText(line).catch(() => {});
+};
+poll();
+
+// ---------------- Live camera (browser only: nothing goes to the server) ----------------
+const CAM_KEY = "so101.camera";
+let stream = null;
+
+function savedCam() { try { return localStorage.getItem(CAM_KEY); } catch { return null; } }
+function saveCam(id) { try { localStorage.setItem(CAM_KEY, id); } catch {} }
+
+async function listCams(selectedId) {
+  const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+  const sel = $("camsel");
+  sel.innerHTML = "";
+  if (!cams.length) sel.add(new Option("No camera found", ""));
+  cams.forEach((d, i) => sel.add(new Option(d.label || `Camera ${i + 1}`, d.deviceId)));
+  if (selectedId && cams.some((d) => d.deviceId === selectedId)) sel.value = selectedId;
+}
+
+async function openStream(deviceId) {
+  if (!deviceId) return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  try {
+    return await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
+  } catch (e) {
+    // The remembered camera is gone (e.g. the iPhone is away): fall back to any camera.
+    if (e.name === "OverconstrainedError" || e.name === "NotFoundError") {
+      return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+    throw e;
+  }
+}
+
+async function startCam(deviceId) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("This browser can't use cameras here. Open http://127.0.0.1:8101 in Chrome or Safari.");
+  }
+  stopCam();
+  stream = await openStream(deviceId);
+  $("video").srcObject = stream;
+  const id = stream.getVideoTracks()[0].getSettings().deviceId;
+  if (id) saveCam(id);
+  await listCams(id);  // camera names are only visible after permission is granted
+  $("camtoggle").textContent = "Stop camera";
+  $("camhint").hidden = true;
+}
+
+function stopCam() {
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null;
+  $("video").srcObject = null;
+  $("camtoggle").textContent = "Start camera";
+  $("camhint").hidden = false;
+}
+
+function camError(e) {
+  stopCam();
+  $("camhint").textContent = e.name === "NotAllowedError"
+    ? "Camera permission denied: allow the camera for this page in the browser's site settings."
+    : String(e.message || e);
+}
+
+$("camtoggle").onclick = () => (stream ? stopCam() : startCam($("camsel").value || savedCam()).catch(camError));
+$("camsel").onchange = () => { if (stream) startCam($("camsel").value).catch(camError); };
+$("mirror").onchange = () => $("video").classList.toggle("mirror", $("mirror").checked);
+
+// ---------------- Text commands (Spanish or English) ----------------
+// Angles are degrees from the base pose (where torque was enabled); the gripper also takes %.
+const JOINT_ALIASES = {
+  shoulder_pan: ["motor 1", "m1", "base", "giro", "pan", "shoulder_pan"],
+  shoulder_lift: ["motor 2", "m2", "hombro", "shoulder", "shoulder_lift"],
+  elbow_flex: ["motor 3", "m3", "codo", "elbow", "elbow_flex"],
+  wrist_flex: ["motor 4", "m4", "muneca", "wrist", "wrist_flex"],
+  wrist_roll: ["motor 5", "m5", "rota la muneca", "gira la muneca", "rota la mano", "gira la mano", "rotacion", "roll", "wrist_roll"],
+  gripper: ["motor 6", "m6", "pinza", "garra", "mano", "gripper"],
+};
+// Words that give a direction (+1/-1) to a relative move, per joint.
+const DIRECTION_WORDS = {
+  shoulder_pan: { izquierda: 1, left: 1, derecha: -1, right: -1 },
+  shoulder_lift: { adelante: 1, forward: 1, atras: -1, back: -1 },
+  elbow_flex: { estira: 1, extend: 1, dobla: -1, pliega: -1, fold: -1 },
+};
+const MOVE_VERBS = /\b(mueve|move|gira|turn|sube|baja|rota|estira|dobla|pliega)\b/;
+
+function normalize(text) {
+  return text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/º/g, "°").trim();
+}
+
+// Spoken Spanish numbers -> digits. Runs BEFORE splitting a phrase on "y", so that
+// "treinta y cinco" stays one number instead of becoming two commands.
+const UNITS = { uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9 };
+const TENS = { veinte: 20, treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90 };
+const SINGLES = { ...UNITS, cero: 0, diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16,
+  diecisiete: 17, dieciocho: 18, diecinueve: 19, veintiuno: 21, veintidos: 22, veintitres: 23, veinticuatro: 24,
+  veinticinco: 25, veintiseis: 26, veintisiete: 27, veintiocho: 28, veintinueve: 29, cien: 100, ciento: 100, ...TENS };
+
+function spokenToDigits(text) {
+  let t = normalize(text)
+    .replace(/\bun poco\b/g, "poco")                 // an amount word, not the number one
+    .replace(/\bun poquito\b/g, "poquito")
+    .replace(/\b(la )?mitad\b/g, "50%")
+    .replace(/\bpor ciento\b/g, "%");
+  t = t.replace(new RegExp(`\\b(${Object.keys(TENS).join("|")}) y (${Object.keys(UNITS).join("|")})\\b`, "g"),
+    (_, tens, unit) => String(TENS[tens] + UNITS[unit]));
+  t = t.replace(new RegExp(`\\b(${Object.keys(SINGLES).join("|")})\\b`, "g"), (w) => String(SINGLES[w]));
+  return t.replace(/(\d)\s+%/g, "$1%");
+}
+const AMOUNT_WORDS = { poco: 10, mucho: 30 };  // "un poco a la izquierda", "mucho más"
+const DEFAULT_STEP = 15;                        // a move with a direction but no amount
+
+function findJoint(text) {
+  let best = null;  // the longest alias wins: "gira la muneca" (roll) beats "muneca" (flex)
+  for (const [joint, aliases] of Object.entries(JOINT_ALIASES)) {
+    for (const alias of aliases) {
+      const at = text.search(new RegExp(`\\b${alias}\\b`));
+      if (at >= 0 && (!best || alias.length > best.alias.length)) best = { joint, alias, at };
+    }
+  }
+  return best;
+}
+
+// Turns one command into an action: {kind: "stop"|"enable"|"rest"} or {kind: "move", joint, deg, why}.
+function parseCommand(raw) {
+  const text = normalize(raw);
+  // Safety first: a phrase that STARTS with a stop word freezes the arm where it is.
+  if (/^(para|parate|pare|detente|detenete|stop|alto|basta|quieto|quieta|frena|freno)\b/.test(text)) return { kind: "stop" };
+  if (/\b(activa|enciende|prende|enable|torque on)\b/.test(text)) return { kind: "enable" };
+  if (/\b(reposo|descansa|suelta|apaga|rest|release|torque off)\b/.test(text)) return { kind: "rest" };
+  const found = findJoint(text);
+  const opening = /\b(abre|abrir|open)\b/.test(text), closing = /\b(cierra|cerrar|close)\b/.test(text);
+  const joint = found ? found.joint : (opening || closing ? "gripper" : null);
+  if (!joint) throw new Error(`which motor? Use "motor 1".."motor 6" or base, hombro, codo, muñeca, pinza`);
+  const rest = found ? text.slice(0, found.at) + " " + text.slice(found.at + found.alias.length) : text;
+  const m = rest.match(/([+-]?\d+(?:[.,]\d+)?)\s*(%|por ciento|percent|grados|°|deg)?/);
+  const value = m ? parseFloat(m[1].replace(",", ".")) : null;
+  const percent = m && /%|ciento|percent/.test(m[2] || "");
+  const j = window.lastState.joints[joint];
+
+  if (joint === "gripper" && (opening || closing || percent)) {
+    const pct = closing ? 0 : value === null ? 100 : value;  // "abre la pinza" = fully open
+    if (m && !percent && !closing && /grados|°|deg/.test(m[2] || "")) {
+      return { kind: "move", joint, deg: value, why: `${value}° (absolute)` };
+    }
+    return { kind: "move", joint, deg: gripperDeg(pct), why: `${pct}% open` };
+  }
+  const dirWord = Object.entries(DIRECTION_WORDS[joint] || {}).find(([w]) => new RegExp(`\\b${w}\\b`).test(rest));
+  const amountWord = Object.entries(AMOUNT_WORDS).find(([w]) => new RegExp(`\\b${w}\\b`).test(rest));
+  if (value === null && !(dirWord || amountWord || MOVE_VERBS.test(text))) {
+    throw new Error(`how much? e.g. "${found.alias} a 30" or "${found.alias} +15"`);
+  }
+  const amount = value ?? (amountWord ? amountWord[1] : DEFAULT_STEP);  // "un poco a la izquierda"
+  const signed = m && /^[+-]/.test(m[1]);
+  const absolute = /\b(a|to|en)\s+\d/.test(rest);  // "codo a 30" is absolute even with a verb
+  if (value === null || (!absolute && (dirWord || signed || MOVE_VERBS.test(text)))) {  // relative: from the current target
+    const delta = dirWord ? dirWord[1] * Math.abs(amount) : amount;
+    return { kind: "move", joint, deg: j.target + delta, why: `${delta > 0 ? "+" : ""}${delta}° (relative)` };
+  }
+  return { kind: "move", joint, deg: value, why: `${value}° (absolute)` };
+}
+
+function logCommand(line, bad = false) {
+  remoteLog(line);
+  const div = document.createElement("div");
+  div.textContent = line;
+  if (bad) div.className = "bad";
+  $("cmdlog").prepend(div);
+  while ($("cmdlog").children.length > 6) $("cmdlog").lastChild.remove();
+}
+
+// ---------------- Everyday language (designed for older users) ----------------
+// Plain words instead of joint names ("abrí la mano", "girá a la izquierda", "levantá el brazo").
+// Any verb form works (vos / tú / usted / infinitive), fillers are ignored, numbers are optional.
+// Spanish forms first, then English (the SenseCAP Watcher's speech-to-text is English).
+const VERB_FORMS = {
+  abre: "abri|abre|abra|abrir|abrime|abrila|abrela|abrala|open|open up",
+  cierra: "cerra|cierra|cierre|cerrar|cerrala|cierrala|close|shut",
+  agarra: "agarra|agarre|agarrar|agarralo|agarrala|toma|tome|tomalo|tomala|sujeta|sujete|sostene|sostiene|grab|grip|take|pick up|hold",
+  suelta: "solta|suelta|suelte|soltar|soltalo|sueltalo|soltala|larga|largalo|release|drop|let go|let it go",
+  gira: "gira|gire|girar|giralo|girala|girate|voltea|voltee|mira|mire|mirar|turn|rotate|look",
+  levanta: "levanta|levante|levantar|levantalo|levantala|levantelo|subi|sube|suba|subir|subilo|subila|subelo|subela|subite|alza|alce|raise|lift",
+  baja: "baja|baje|bajar|bajalo|bajala|bajelo|bajela|bajate|lower",
+  estira: "estira|estire|estirar|extende|extiende|extienda|extender|extend|stretch|reach out",
+  encoge: "encoge|encoja|encoger|recoge|recoja|recoger|fold|retract|pull back",
+  saluda: "saluda|salude|saludar|saludame|saludalo|saludala|wave|say hello|greet",
+  // "vuelve" alone is NOT here: "vuelve a girar" means turn again, not go rest.
+  descansa: "descansa|descanse|descansar|volve a casa|vuelve a casa|vuelva a casa|anda a casa|a casa|reposo|a dormir|rest|go to sleep|go home|sleep",
+  activa: "activa|active|activar|activate|encende|enciende|encienda|encender|encendete|enciendete|prende|prenda|prender|prendete|desperta|despierta|despierte|despertar|despertate|despiertate|despiertese|wake up|turn on|power on|start up",
+  ayuda: "ayuda|ayudame|ayudeme|que puedo decir|que sabes hacer|que podes hacer|que puede hacer|comandos|help|what can you do",
+};
+const FILLERS = /\b(por favor|porfa|porfavor|che|eh|dale|bueno|ahora|podrias|podes|puedes|puede|quiero que|un favor|me|te|lo|la|el|los|las|please|can you|could you|would you|will you|robot|the|an|a|my|now|okay|ok|hey|just|move|arm)\b/g;
+const TECHNICAL = /\b(codo|muneca|motor|m[1-6])\b/;  // naming a specific joint -> the technical parser
+const STOP_WORDS = /\b(parar|pare|parate|basta|stop|halt|freeze|alto|detente|detener|detenete|quieto|quieta|frena|frenar)\b/;
+// "para" is also the everyday "for" ("guardá esta posición para traer el vaso"), so on its own it
+// only stops when it's the whole phrase, opens it, or closes it ("pará", "pará ya", "no no, pará").
+function isStopPhrase(t) {
+  t = t.replace(/[\s,.!?¡¿]+/g, " ").trim();
+  return STOP_WORDS.test(t) || /^para (el|al) robot\b/.test(t)  // "pará el robot" = stop, when in doubt, stop
+    || /^para\b(?!\s+(el|la|los|las|un|una|que|mi|traer|buscar|ir|agarrar|tomar|abrir|cerrar)\b)/.test(t) || /\bpara$/.test(t);
+}
+const SIDES = { izquierda: 1, derecha: -1, left: 1, right: -1 };
+const SIDE_NAMES = { izquierda: "izquierda", derecha: "derecha", left: "izquierda", right: "derecha" };  // replies are spoken in Spanish
+const HELP_TEXT = "Puede decirme: abrir la mano, cerrar la mano, girar a la izquierda o a la derecha, " +
+  "levantar o bajar el brazo, saludar, o descansar. Para detenerme, diga: parar.";
+const FAIL_TEXT = "No le entendí. Puede decir, por ejemplo: robot, abrir la mano.";
+const SIDE_KEY = "so101.swapSides";
+
+// Every form -> its canonical verb, longest forms first: "turn on" (activa) must win over "turn" (gira).
+const FORM_TO_VERB = Object.entries(VERB_FORMS).flatMap(([verb, forms]) => forms.split("|").map((f) => [f, verb]))
+  .sort((a, b) => b[0].length - a[0].length);
+const FORMS_RE = new RegExp(`\\b(${FORM_TO_VERB.map(([f]) => f).join("|")})\\b`, "g");
+const FORM_LOOKUP = Object.fromEntries(FORM_TO_VERB);
+
+function canon(text) {
+  const t = ` ${text} `.replace(FORMS_RE, (form) => FORM_LOOKUP[form]);
+  return t.replace(FILLERS, " ").replace(/\s+/g, " ").trim();
+}
+
+const ALL_THE_WAY = /\b(completamente|todo|del todo|al maximo|hasta arriba|hasta abajo|hasta el fondo|all the way|completely|fully)\b/;
+
+function amountIn(c, fallback) {  // "20", "un poquito", "un poco", "mucho", "todo" or a default, in degrees
+  const n = c.match(/(\d+)(?!%)/);
+  return n ? Number(n[1]) : /\bpoquito\b/.test(c) ? 5 : /\b(poco|little|bit)\b/.test(c) ? 10 : /\b(mucho|lot|much)\b/.test(c) ? 30
+    : ALL_THE_WAY.test(c) ? 60 : fallback;  // "all the way" is still capped by the joint's safe range
+}
+
+// Spanish names to describe technical moves out loud ("Muevo el codo" instead of "Listo").
+const JOINT_WORDS = { shoulder_pan: "Giro la base", shoulder_lift: "Muevo el hombro", elbow_flex: "Muevo el codo",
+  wrist_flex: "Muevo la muñeca", wrist_roll: "Giro la muñeca", gripper: "Muevo la mano" };
+// "Oye", "oiga", "escuchame": a call for attention, like saying "robot" alone.
+const ATTENTION = /^(oye|oiga|oi|escucha|escuchame|escucheme|hey|ey|robot)$/;
+// Every verb form, to split "abrí la mano cerrá la mano" into two commands even without "y".
+// Single-word forms only: multi-word ones like "a casa" would cut "volvé a casa" in half.
+const SINGLE_WORD_VERBS = Object.values(VERB_FORMS).join("|").split("|").filter((f) => !f.includes(" "));
+let anyVerbRe = null;  // built on first use: FETCH_VERBS is defined further down the page
+function anyVerb() {
+  return anyVerbRe ??= new RegExp(`\\s+(?=(${SINGLE_WORD_VERBS.join("|")}|${FETCH_VERBS})\\b)`, "g");
+}
+
+const move = (joint, deg, say, why) => ({ kind: "move", joint, deg, say, why });
+
+// The gripper's closed/open stops are physical (absolute steps, same as ABS_RANGES in panel.py), so
+// "% open" must not depend on how the gripper happened to be when torque was enabled (the base pose).
+const GRIPPER_CLOSED_STEPS = 2046, GRIPPER_OPEN_STEPS = 3094;
+function gripperDeg(pct) {  // % open -> degrees from the base pose
+  const j = window.lastState.joints.gripper, base = j.steps - (j.deg * 4096) / 360;
+  const abs = GRIPPER_CLOSED_STEPS + (Math.min(Math.max(pct, 0), 100) / 100) * (GRIPPER_OPEN_STEPS - GRIPPER_CLOSED_STEPS);
+  return ((abs - base) * 360) / 4096;
+}
+
+// ---------------- Named places: "guardá esta posición como vaso", "traeme el vaso", "andá a la mesa" ----------------
+let poses = {};  // name -> {joint: absolute steps}, stored by the server in poses.json
+const SAVE_RE = /\b(?:guarda|guardar|guarde|guardame|guardala|recorda|recuerda|recuerde|memoriza|memorice|anota|anote)\b(?:\s+(?:esta|esa|este|ese|la|el|mi))?(?:\s+(?:posicion|pose|lugar|sitio|punto|ubicacion))?(?:\s+(?:actual|aca|aqui))?\s+(?:como|con el nombre de|con el nombre|llamad[ao]|para traer|para agarrar|para buscar|para|de la|de los|del|de)\s+(.+)$/;
+const SAVE_RE2 = /\b(?:esta|este|esto|aca|aqui)\s+es\s+(?:la posicion|el lugar|la ubicacion)\s+(?:de la|de los|del|de)\s+(.+)$/;
+const SAVE_RE3 = /^(?:aca esta|aqui esta|aca hay|aqui hay)\s+(?:el|la|los|las|un|una|mi)\s+(.+)$/;  // "acá está el vaso"
+const FETCH_VERBS = "traeme|trae|traer|traiga|traigame|alcanzame|alcanza|alcance|alcanceme|dame|deme|pasame|paseme|acercame|acerqueme|buscame|bring|fetch";
+const NOT_PART_OF_NAME = /^(posicion|pose|lugar|sitio|brazo|robot|aca|aqui|esto|eso)$/;
+const FORGET_RE = /\b(?:olvida|olvide|olvidate de|olvidate|borra|borre|elimina|elimine)\b(?:\s+(?:la posicion|el lugar|la pose|la ubicacion))?(?:\s+(?:de la|de los|del|de))?\s+(.+)$/;
+const FETCH_RE = /\b(?:traeme|trae|traer|traiga|traigame|alcanzame|alcanza|alcance|alcanceme|dame|deme|pasame|paseme|acercame|acerqueme|busca|buscame|buscar|busque)\b\s+(.+)$/;
+const GO_RE = /\b(?:anda|ve|va|vaya|ir|lleva|lleve|llevar|mueve|mueva|move)\b(?:\s+(?:el brazo|la mano))?\s+(?:a|al|hacia|hasta|para)\s+(.+)$/;
+const LIST_PLACES_RE = /\bque (?:lugares|posiciones|sitios|cosas) (?:conoces|sabes|tenes|tienes|hay|conoce|sabe|tiene|guardaste|recordas)\b|\b(?:lista de|cuales son los) (?:lugares|posiciones)\b/;
+const NOT_A_PLACE = /^(izquierda|derecha|arriba|abajo|adelante|atras|descansar|dormir|casa|girar|subir|bajar|poco|poquito|mucho|todo|left|right|up|down|forward|back|sleep|home|bed|\d.*)$/;
+// English (the SenseCAP Watcher transcribes in English).
+const FETCH_RE_EN = /\b(?:bring me|bring|fetch|get me|give me|hand me|pass me)\b\s+(.+)$/;
+const GO_RE_EN = /\b(?:go|move)\b(?:\s+(?:the arm|the hand))?\s+(?:to|towards)\s+(.+)$/;
+const SAVE_RE_EN = /\b(?:save|remember|store)\b(?:\s+(?:this|that|the))?(?:\s+(?:position|pose|place|spot))?\s+(?:as|for)\s+(.+)$/;
+const FORGET_RE_EN = /\bforget\b(?:\s+the)?(?:\s+(?:place|position))?\s+(.+)$/;
+const LIST_PLACES_RE_EN = /\bwhat (?:places|positions) do you know\b/;
+
+// A short, clean place name: stops at the first verb ("brazo traeme el brazo" -> "brazo"),
+// drops filler words, at most 3 words.
+function placeName(s) {
+  const verbs = new RegExp(`\\b(${SINGLE_WORD_VERBS.join("|")}|${FETCH_VERBS}|busca|buscar|anda|ve|guarda|guardar)\\b.*$`);
+  const words = s.replace(/\b(por favor|porfa|ya|ahora|robot|please|now)\b/g, " ")
+    .replace(verbs, " ")
+    .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/^(?:(?:el|la|los|las|un|una|al|del|de la|de los|de las|de|mi|the|a|an|my|some)\s+)+/, "")
+    .split(" ").filter((w) => w && !NOT_PART_OF_NAME.test(w));
+  return words.slice(0, 3).join(" ");
+}
+
+// "vaso de agua" finds a saved "vaso" (and "el vaso" was already reduced to "vaso").
+function findPlace(name) {
+  if (poses[name]) return name;
+  const hits = Object.keys(poses).filter((p) => name.includes(p) || p.includes(name));
+  return hits.sort((a, b) => b.length - a.length)[0] || null;
+}
+
+// Vision calibration by voice: while holding the arm with both hands there's no free hand for the mouse.
+// "marcá" on its own (or "marcalo", "marcá el brazo") is enough: nothing else uses that verb.
+const MARK_CUP_RE = /\b(marca|marcar|marque|marcame|marcalo|marcala)\b|\b(mira|mire)\b.*\b(vaso|vasito|taza|copa|botella)\b/;
+const SAVE_GRASP_RE = /\b(guarda|guardar|guarde|guardame)\b\s+(?:el\s+|este\s+)?agarre\b|\b(?:aca|aqui)\s+(?:lo\s+)?agarras\b|\bagarre\s+(?:aca|aqui)\b/;
+
+const SEARCH_POSE_RE = /\b(?:guarda|guardar|guarde|guardame)\b.*\b(?:busqueda|mirar)\b|\besta es la posicion (?:para mirar|de busqueda)\b/;
+// Reflexive only ("aflojate" = loosen YOURSELF): "aflojá la mano" must not drop the whole arm.
+const RELEASE_HERE_RE = /\b(aflojate|aflojese|soltate|sueltate|sueltese|relajate|relajese)\b/;
+
+function placeIntent(raw) {
+  let m;
+  if (SEARCH_POSE_RE.test(raw)) return { kind: "vsearch" };
+  if (RELEASE_HERE_RE.test(raw) && !/\b(mano|pinza|garra)\b/.test(raw)) return { kind: "vrelease" };
+  if (SAVE_GRASP_RE.test(raw)) return { kind: "vgrasp" };
+  if (MARK_CUP_RE.test(raw)) return { kind: "vmark" };
+  if (LIST_PLACES_RE.test(raw)) return { kind: "places" };
+  if ((m = raw.match(SAVE_RE) || raw.match(SAVE_RE2) || raw.match(SAVE_RE3))) {
+    const name = placeName(m[1]);
+    return name ? { kind: "save", name } : { kind: "say", say: "¿Cómo se llama este lugar? Diga, por ejemplo: guardá esta posición como vaso." };
+  }
+  if ((m = raw.match(FORGET_RE))) { const name = placeName(m[1]); if (name) return { kind: "forget", name }; }
+  if ((m = raw.match(FETCH_RE))) { const name = placeName(m[1]); if (name) return { kind: "fetch", name }; }
+  if ((m = raw.match(GO_RE))) {
+    const name = placeName(m[1]);
+    if (name && !NOT_A_PLACE.test(name)) return { kind: "go", name };  // "ve a la derecha" is a direction, not a place
+  }
+  return null;
+}
+
+// Everyday phrase -> action, or null to let the technical parser try.
+function everyday(part) {
+  const place = placeIntent(normalize(part));
+  if (place) return place;
+  let c = canon(part);
+  const J = window.lastState.joints;
+  const has = (re) => re.test(c);
+  if (has(TECHNICAL)) return null;
+  if (has(/\bayuda\b/)) return { kind: "help", say: HELP_TEXT };
+  // Kind words deserve a kind answer (and no movement). Checked on the original words: "bueno" is
+  // also a filler ("bueno, girá...") and canon() would have removed it.
+  if (/\b(gracias|muy bien|bien hecho|excelente|genial|eres muy bueno|sos muy bueno|que bueno|te quiero|buen robot|thank you|thanks|good job|well done|good robot|great job)\b/.test(normalize(part))) {
+    return { kind: "chat", say: "¡Gracias! Para servirle." };
+  }
+  // "hola" alone is a greeting; "hola, andá para arriba" is a polite request: drop the greeting.
+  if (has(/\bsaluda\b/) || /^(hola|chau|adios)$/.test(c)) return { kind: "wave", say: "¡Hola!" };
+  c = c.replace(/^(hola|chau|adios)\s+/, "");
+  if (has(/\bdescansa\b/)) return { kind: "rest", say: "Vuelvo a descansar" };
+  if (has(/\bactiva\b/)) return { kind: "enable", say: "Estoy listo" };
+  if (/^(mas|poco mas|poquito mas|otro poco|segui|sigue|seguir|more|bit more|little more|keep going)\b/.test(c)) return { kind: "more", factor: 1, say: "Un poco más" };
+  if (/^(menos|poco menos|al reves|para atras|less|bit less|little less)\b/.test(c)) return { kind: "more", factor: -0.5, say: "Un poco menos" };
+  if (has(/\b(abre|suelta)\b/)) {
+    const p = c.match(/(\d+)%/), pct = p ? Number(p[1]) : /\b(poco|poquito)\b/.test(c) ? 30 : 100;
+    const say = has(/\bsuelta\b/) ? "Suelto" : pct >= 100 ? "Abro la mano" : "Abro un poco la mano";
+    return move("gripper", gripperDeg(pct), say, `${pct}% open`);
+  }
+  if (has(/\b(cierra|agarra)\b/)) return move("gripper", gripperDeg(0), has(/\bagarra\b/) ? "Agarro" : "Cierro la mano", "closed");
+  const side = c.match(/\b(izquierda|derecha|left|right)\b/);
+  if (side) {
+    const d = SIDES[side[1]] * (swapSides() ? -1 : 1) * amountIn(c, 20);
+    return move("shoulder_pan", J.shoulder_pan.target + d, `Giro a la ${SIDE_NAMES[side[1]]}`, `${d > 0 ? "+" : ""}${d}°`);
+  }
+  if (has(/\b(levanta|baja|arriba|abajo|up|down)\b/)) {
+    const j = J.shoulder_lift, up = Math.sign(2048 - j.steps) || 1;  // "up" = toward the upright middle of its travel
+    const lift = has(/\b(levanta|arriba|up)\b/), d = (lift ? up : -up) * amountIn(c, 15);
+    return move("shoulder_lift", j.target + d, lift ? "Levanto el brazo" : "Bajo el brazo", `${d > 0 ? "+" : ""}${d}°`);
+  }
+  if (has(/\b(estira|encoge|adelante|atras|forward|backward)\b/)) {
+    const d = (has(/\b(estira|adelante|forward)\b/) ? 1 : -1) * amountIn(c, 15);
+    return move("elbow_flex", J.elbow_flex.target + d, d > 0 ? "Estiro el brazo" : "Encojo el brazo", `${d > 0 ? "+" : ""}${d}°`);
+  }
+  return null;
+}
+
+function swapSides() { try { return localStorage.getItem(SIDE_KEY) === "1"; } catch { return false; } }
+
+let lastCommand = null, lastMove = null, macroAbort = false;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Freezes every joint where it is right now.
+async function stopArm() {
+  macroAbort = true;
+  const targets = Object.fromEntries(Object.entries(window.lastState.joints).map(([n, j]) => [n, j.deg]));
+  await api("/api/targets", { targets });
+}
+
+async function sendMove(joint, rawDeg) {
+  const j = window.lastState.joints[joint];
+  const deg = Math.round(Math.min(Math.max(rawDeg, j.min), j.max));
+  await api("/api/target", { joint, deg });
+  lastMove = { joint, delta: deg - j.target };
+  return deg !== Math.round(rawDeg) ? ` (limited to ${deg}°)` : "";
+}
+
+async function wave() {  // "saludá": open the hand, swing the wrist twice, back as it was
+  macroAbort = false;
+  const J = window.lastState.joints, w = J.wrist_flex.target, g = J.gripper.target;
+  const steps = [["gripper", gripperDeg(60)], ["wrist_flex", w + 25], ["wrist_flex", w - 25],
+    ["wrist_flex", w + 25], ["wrist_flex", w - 25], ["wrist_flex", w], ["gripper", g]];
+  for (const [joint, deg] of steps) {
+    if (macroAbort) return;
+    await sendMove(joint, deg);
+    await sleep(1000);
+  }
+}
+
+// ---- Moving to a saved place (driven from the page, so "pará" can cut it short at any moment) ----
+let macroRunning = false;
+
+function absToDeg(joint, abs) {  // absolute steps -> degrees from the current base pose
+  const j = window.lastState.joints[joint], base = j.steps - (j.deg * 4096) / 360;
+  return ((abs - base) * 360) / 4096;
+}
+
+// Waits until the joints reach their targets, reading the real positions. Ends early on "pará",
+// torque loss (power cut), a blocked joint, or a timeout sized to the longest travel.
+async function waitArrive(targets) {
+  const J0 = window.lastState.joints, speed = window.lastState.speed || 300;
+  const longest = Math.max(...Object.entries(targets).map(([j, d]) => Math.abs(d - J0[j].deg)));
+  const deadline = Date.now() + ((longest * 4096) / 360 / speed) * 1500 + 3000;
+  await sleep(400);
+  while (Date.now() < deadline) {
+    if (macroAbort) return "stopped";
+    if (!torque) return "off";
+    const J = window.lastState.joints;
+    const there = Object.entries(targets).every(([j, d]) => Math.abs(J[j].deg - Math.min(Math.max(d, J[j].min), J[j].max)) < 3);
+    if (there) return "ok";
+    if (Object.keys(targets).some((j) => J[j].blocked)) return "blocked";
+    await sleep(150);
+  }
+  return "timeout";
+}
+
+async function goToPose(pose) {  // every joint but the gripper, all at once (the gripper is commanded separately)
+  const targets = {};
+  for (const [joint, abs] of Object.entries(pose)) if (joint !== "gripper") targets[joint] = Math.round(absToDeg(joint, abs));
+  await api("/api/targets", { targets });
+  return waitArrive(targets);
+}
+
+async function gripperTo(pct) {
+  await sendMove("gripper", gripperDeg(pct));
+  await sleep(pct === 0 ? 1300 : 900);  // closing on an object takes a moment to get a grip
+}
+
+const PROBLEM_REPLIES = {
+  blocked: "Algo me bloqueó el camino. Me detengo.",
+  off: "Me quedé sin fuerza. Revise la alimentación del robot.",
+  timeout: "No pude llegar. Me detengo.",
+};
+
+const currentPose = () => Object.fromEntries(Object.entries(window.lastState.joints).map(([j, v]) => [j, v.steps]));
+
+// A step's status -> true to go on; on a problem, stop the arm and say why.
+function makeCheck(reply) {
+  return async (status) => {
+    if (status === "ok") return true;
+    if (status !== "stopped") { await stopArm(); reply(PROBLEM_REPLIES[status]); }
+    return false;
+  };
+}
+
+// Common to every "traeme ...": with the gripper already around the object, grab it, lift it off
+// the table and carry it to the taught "entrega" spot (or back where the errand started).
+async function grabAndDeliver(start, check, reply) {
+  await gripperTo(0);
+  if (macroAbort) return;
+  // Ease to a light squeeze: just past where the jaws met the object. Squeezing at full force for
+  // the whole trip is what overloaded the gripper.
+  const g = window.lastState.joints.gripper, gAbs = g.steps;
+  if (gAbs > GRIPPER_CLOSED_STEPS + 40) await sendMove("gripper", absToDeg("gripper", gAbs - 25));
+  const lift = window.lastState.joints.shoulder_lift, up = Math.sign(2048 - lift.steps) || 1;
+  await sendMove("shoulder_lift", lift.target + up * 15);
+  if (!(await check(await waitArrive({ shoulder_lift: lift.target + up * 15 })))) return;
+  if (!(await check(await goToPose(poses.entrega || start)))) return;
+  reply("Aquí tiene. Cuando lo tenga, dígame: soltá.");
+}
+
+// "andá a la mesa" (fetch=false) or "traeme el vaso" from a saved place (fetch=true).
+async function placeMacro(name, fetch, reply) {
+  macroAbort = false; macroRunning = true;
+  const start = currentPose(), check = makeCheck(reply);
+  try {
+    if (!fetch) {
+      reply(`Voy a ${name}`);
+      if (await check(await goToPose(poses[name]))) reply("Llegué");
+      return;
+    }
+    reply(`Voy a buscar ${name}`);
+    await gripperTo(100);
+    if (macroAbort || !(await check(await goToPose(poses[name])))) return;
+    await grabAndDeliver(start, check, reply);
+  } finally {
+    macroRunning = false;
+  }
+}
+
+// ---------------- Vision grasping with the WRIST camera: look -> align -> reach ----------------
+// The camera rides on the arm, so a fixed pixel->pose map can't work. Instead:
+//  1. LOOK:  go to a taught search pose (arm up, camera on the table); if the cup isn't in view,
+//            turn the base to scan for it.
+//  2. ALIGN: turn the base until the cup is horizontally centered in the image.
+//  3. REACH: once centered, how high the cup sits in the image (v) says how far away it is.
+//            Taught examples (v -> grasp pose) are interpolated to pick how far to reach.
+// Each example also stores how much the caregiver had to turn the base beyond "centered" to get the
+// gripper onto the cup (dpan): the camera is mounted off the gripper's axis, and that offset is learned.
+let vision = { search: null, examples: [] }, pendingMark = null;
+const CUP_WORDS = /\b(vaso|vasito|taza|tacita|copa|botella|agua|cup|glass|mug|bottle|water)\b/;
+const MIN_EXAMPLES = 2;
+const ALIGN_TOLERANCE = 0.03;  // |u - 0.5| below this counts as centered
+const CAMERA_FOV_DEG = 60;     // rough horizontal field of view: turns a pixel error into degrees
+const SCAN_OFFSETS = [0, 20, -20, 40, -40];  // degrees of base rotation to look around the search pose
+
+const visionReady = () => !!vision.search && vision.examples.length >= MIN_EXAMPLES;
+
+async function loadVision() {
+  try { vision = await api("/api/vision"); } catch { vision = { search: null, examples: [] }; }
+  renderVision();
+}
+
+function renderVision() {
+  const n = vision.examples.length;
+  $("vstatus").textContent = !vision.search ? `Step 1: raise the arm so the camera sees the table, then "Save search pose".`
+    : pendingMark ? `Cup centered. Hold the arm, "Release here", move the gripper onto the cup, then "Save grasp".`
+    : n >= MIN_EXAMPLES ? `Calibrated (${n} examples): "traeme el vaso" uses the camera.`
+    : `Example ${n + 1} of ${MIN_EXAMPLES}+: put the cup in front of the robot and press "Mark cup".`;
+  $("vgrasp").disabled = !pendingMark;
+  renderPlaces();
+}
+
+// Where the cup is in the image, as the median of a few frames (0..1), or null.
+async function locateCup(frames = 7) {
+  const xs = [], ys = [];
+  for (let i = 0; i < frames * 3 && xs.length < frames; i++) {
+    let hit = null;
+    if ($("vsource").value === "ai") {
+      hit = (window.detectObjects?.() || []).sort((a, b) => b.score - a.score)[0] || null;
+    } else if (tracker.hue !== null) {
+      hit = detect();
+    }
+    if (hit) { xs.push(hit.x); ys.push(hit.y); }
+    await sleep(120);
+  }
+  if (xs.length < 3) return null;
+  const median = (a) => a.sort((p, q) => p - q)[a.length >> 1];
+  return { x: median(xs), y: median(ys) };
+}
+
+const panDeg = () => window.lastState.joints.shoulder_pan.target;
+
+async function turnBaseTo(deg) {
+  await sendMove("shoulder_pan", deg);
+  return waitArrive({ shoulder_pan: deg });
+}
+
+// 1+2: from the search pose, find the cup and center it. Returns {v, pan (absolute steps)} or a reason.
+async function lookAndAlign() {
+  const st = await goToPose(vision.search);
+  if (st !== "ok") return { problem: st };
+  const searchPan = panDeg();
+  let cup = null;
+  for (const offset of SCAN_OFFSETS) {
+    if (macroAbort) return { problem: "stopped" };
+    if (offset) { const s = await turnBaseTo(searchPan + offset); if (s !== "ok") return { problem: s }; await sleep(300); }
+    if ((cup = await locateCup())) break;
+  }
+  if (!cup) return { problem: "notfound" };
+  // Turn the base until the cup is centered. The direction (which way the image moves when the base
+  // turns) isn't known in advance: try one way and flip if the error grew.
+  let sign = 1;
+  for (let i = 0; i < 8 && Math.abs(cup.x - 0.5) > ALIGN_TOLERANCE; i++) {
+    if (macroAbort) return { problem: "stopped" };
+    const before = cup.x - 0.5;
+    const s = await turnBaseTo(panDeg() - sign * before * CAMERA_FOV_DEG * 0.8);
+    if (s !== "ok") return { problem: s };
+    await sleep(300);
+    cup = await locateCup(5);
+    if (!cup) return { problem: "lost" };
+    if (Math.abs(cup.x - 0.5) > Math.abs(before)) sign = -sign;  // went the wrong way
+  }
+  if (Math.abs(cup.x - 0.5) > ALIGN_TOLERANCE * 2) return { problem: "align" };
+  return { v: cup.y, pan: window.lastState.joints.shoulder_pan.steps };
+}
+
+// 3: interpolate the grasp pose from the examples by the cup's height in the image (v).
+function reachFor(v, alignedPan) {
+  const ex = [...vision.examples].sort((a, b) => a.v - b.v);
+  if (v < ex[0].v - 0.05 || v > ex[ex.length - 1].v + 0.05) return null;  // nearer/farther than anything taught
+  let i = 0;
+  while (i < ex.length - 2 && v > ex[i + 1].v) i++;
+  const a = ex[i], b = ex[i + 1], t = Math.min(Math.max((v - a.v) / (b.v - a.v || 1), -0.3), 1.3);
+  const pose = {};
+  for (const joint of Object.keys(a.pose)) pose[joint] = Math.round(a.pose[joint] + t * (b.pose[joint] - a.pose[joint]));
+  pose.shoulder_pan = Math.round(alignedPan + a.dpan + t * (b.dpan - a.dpan));  // learned camera offset
+  return pose;
+}
+
+const LOOK_PROBLEMS = {
+  notfound: "No veo el vaso. ¿Está sobre la mesa, delante del robot?",
+  lost: "Perdí de vista el vaso. Me detengo.",
+  align: "No pude centrar el vaso. Me detengo.",
+};
+
+async function visionFetch(reply) {
+  macroAbort = false; macroRunning = true;
+  const start = currentPose(), check = makeCheck(reply);
+  try {
+    reply("Busco el vaso");
+    await gripperTo(100);
+    const look = await lookAndAlign();
+    if (look.problem) {
+      if (look.problem !== "stopped") { await stopArm(); reply(LOOK_PROBLEMS[look.problem] || PROBLEM_REPLIES[look.problem]); }
+      return;
+    }
+    const target = reachFor(look.v, look.pan);
+    remoteLog(`vision: cup centered at v=${look.v.toFixed(3)}, pan=${look.pan} -> grasp ${JSON.stringify(target)}`);
+    if (!target) return reply("Veo el vaso, pero está más cerca o más lejos de lo que aprendí. Acérquelo un poco.");
+    reply("Lo veo. Voy a buscarlo.");
+    // Come from above: the grasp pose with the shoulder 15° more upright, then go down onto the cup.
+    const above = { ...target };
+    above.shoulder_lift += Math.round((Math.sign(2048 - above.shoulder_lift) || 1) * 15 * 4096 / 360);
+    if (macroAbort || !(await check(await goToPose(above)))) return;
+    if (!(await check(await goToPose(target)))) return;
+    await grabAndDeliver(start, check, reply);
+  } finally {
+    macroRunning = false;
+  }
+}
+
+// ---- Teaching (voice or buttons). Each returns a Spanish reply. ----
+async function saveSearchPose() {
+  if (!window.lastState) return "Todavía no estoy conectado.";
+  vision = await api("/api/vision", { ...vision, search: currentPose() });
+  renderVision();
+  return "Listo, desde acá voy a buscar el vaso. Ponga el vaso delante mío y diga: marcá el vaso.";
+}
+
+async function markCup() {
+  if (!stream) { $("vstatus").textContent = "Start the camera first."; return "Primero encienda la cámara."; }
+  if ($("vsource").value === "color" && tracker.hue === null) {
+    $("vstatus").textContent = "Click the cup in the video first, to pick its color.";
+    return "Primero toque el vaso en el video, para que aprenda su color.";
+  }
+  if (!vision.search) return "Primero enséñeme desde dónde mirar: levánteme y diga: guardá la posición de búsqueda.";
+  if (!torque) return "Estoy apagado. Primero diga: robot, encender.";
+  macroAbort = false; macroRunning = true;
+  try {
+    $("vstatus").textContent = "Looking for the cup and centering it...";
+    const look = await lookAndAlign();
+    if (look.problem) { renderVision(); return LOOK_PROBLEMS[look.problem] || PROBLEM_REPLIES[look.problem] || "Me detengo."; }
+    pendingMark = look;
+    renderVision();
+    return "Lo tengo centrado. Sostenga el brazo y diga: aflojate. Después lleve la pinza al vaso y diga: guardá el agarre.";
+  } finally {
+    macroRunning = false;
+  }
+}
+
+// Torque off where it is (for moving it by hand), after a spoken countdown so someone holds it.
+async function releaseHere(reply) {
+  reply("Sostenga el brazo. Me suelto en tres segundos.");
+  macroAbort = false;
+  await sleep(3500);
+  if (macroAbort) return "No me suelto.";
+  await api("/api/release_here", {});
+  return "Listo, me solté. Puede moverme con la mano.";
+}
+
+async function saveGrasp() {
+  if (!pendingMark || !window.lastState) return "Primero marque el vaso. Diga: marcá el vaso.";
+  const pose = currentPose();
+  const example = { v: pendingMark.v, dpan: pose.shoulder_pan - pendingMark.pan, pose };
+  vision = await api("/api/vision", { ...vision, examples: [...vision.examples, example] });
+  pendingMark = null;
+  renderVision();
+  const n = vision.examples.length;
+  return n >= MIN_EXAMPLES
+    ? `Guardé el ejemplo ${n}. Ya puedo buscar el vaso solo. Para más precisión, enséñeme otro a distinta distancia.`
+    : `Guardé el ejemplo ${n}. Ponga el vaso más cerca o más lejos y repita: marcá el vaso.`;
+}
+
+$("vsearch").onclick = () => saveSearchPose().then(speakText);
+$("vmark").onclick = () => markCup().then(speakText);
+$("vrelease").onclick = () => releaseHere(speakText).then(speakText);
+$("vgrasp").onclick = () => saveGrasp().then(speakText);
+$("vreset").onclick = async () => {
+  vision = await api("/api/vision", { search: null, examples: [] });
+  pendingMark = null;
+  renderVision();
+};
+
+// Every few seconds, the current frame (with cup detections and the centering line drawn on it) is
+// saved on this Mac as camera_snapshot.jpg, so the setup can be checked remotely while debugging.
+const snapCanvas = document.createElement("canvas"), snapCtx = snapCanvas.getContext("2d");
+setInterval(() => {
+  const v = $("video");
+  if (!stream || v.readyState < 2) return;
+  const scale = Math.min(1, 960 / v.videoWidth), W = Math.round(v.videoWidth * scale), H = Math.round(v.videoHeight * scale);
+  snapCanvas.width = W; snapCanvas.height = H;
+  snapCtx.drawImage(v, 0, 0, W, H);
+  snapCtx.lineWidth = 3; snapCtx.font = "600 16px system-ui";
+  snapCtx.strokeStyle = "rgba(255, 212, 0, 0.7)";
+  snapCtx.beginPath(); snapCtx.moveTo(W / 2, 0); snapCtx.lineTo(W / 2, H); snapCtx.stroke();
+  const hits = $("vsource").value === "ai" ? window.detectObjects?.() || [] : [];
+  for (const d of hits) {
+    snapCtx.strokeStyle = snapCtx.fillStyle = "#00c8ff";
+    snapCtx.strokeRect((d.x - d.w / 2) * W, (d.y - d.h / 2) * H, d.w * W, d.h * H);
+    snapCtx.fillText(`${d.label} ${Math.round(d.score * 100)}%`, (d.x - d.w / 2) * W + 3, (d.y - d.h / 2) * H - 5);
+  }
+  const colorHit = $("vsource").value === "color" && tracker.hue !== null ? detect() : null;
+  if (colorHit) {
+    snapCtx.strokeStyle = "#00ff88";
+    snapCtx.beginPath(); snapCtx.arc(colorHit.x * W, colorHit.y * H, 18, 0, Math.PI * 2); snapCtx.stroke();
+  }
+  api("/api/snapshot", { jpeg: snapCanvas.toDataURL("image/jpeg", 0.7) }).catch(() => {});
+}, 5000);
+
+// The centering line (where the cup must sit to be "aligned") and the AI's detections, over the video.
+function drawVisionLayer() {
+  if (!stream) return;
+  const r = videoRect();
+  const [cx] = toOverlay(0.5, 0, r);
+  octx.strokeStyle = "rgba(255, 212, 0, 0.6)"; octx.lineWidth = 2;
+  octx.beginPath(); octx.moveTo(cx, r.y); octx.lineTo(cx, r.y + r.h); octx.stroke();
+  if ($("vsource").value === "ai") {
+    octx.font = "600 13px system-ui";
+    for (const d of window.detectObjects?.() || []) {
+      const [x, y] = toOverlay(d.x - (mirrored() ? -d.w / 2 : d.w / 2), d.y - d.h / 2, r);
+      octx.strokeStyle = "#00c8ff"; octx.lineWidth = 2;
+      octx.strokeRect(x, y, d.w * r.w, d.h * r.h);
+      octx.fillStyle = "#00c8ff"; octx.fillText(`${d.label} ${Math.round(d.score * 100)}%`, x + 2, y - 4);
+    }
+  }
+}
+
+async function loadPoses() {
+  try { poses = await api("/api/poses"); } catch { poses = {}; }
+  renderPlaces();
+}
+
+function renderPlaces() {
+  const names = Object.keys(poses).sort();
+  // Simple mode: one big button per thing it can bring (the "entrega" spot is where it brings them).
+  $("s-places").innerHTML = "";
+  const seesCups = visionReady();
+  if (seesCups) {
+    const b = document.createElement("button");
+    b.textContent = "🥤 Traer el vaso";
+    b.onclick = () => window.lastState && handleSpeech("traeme el vaso", { button: true });
+    $("s-places").appendChild(b);
+  }
+  for (const name of names.filter((n) => n !== "entrega")) {
+    const b = document.createElement("button");
+    b.textContent = `🤲 Traer: ${name}`;
+    b.onclick = () => window.lastState && handleSpeech(`traeme ${name}`, { button: true });
+    $("s-places").appendChild(b);
+  }
+  $("s-places-hint").hidden = names.length > 0 || seesCups;
+  // Full panel: caregiver view.
+  $("placelist").textContent = names.length ? `Saved places: ${names.join(", ")}` : "No saved places yet.";
+}
+
+// Runs a typed or spoken phrase; `announce` says each action out loud as it starts.
+// Returns {ok, failed, stopped, replies}.
+async function runCommands(raw, announce = () => {}) {
+  let text = spokenToDigits(raw);
+  if (/^(otra vez|de nuevo|repeti|repite|repita|repetir|again|repeat)\b/.test(text)) {
+    if (!lastCommand) { logCommand("✗ nothing to repeat yet", true); return { ok: 0, failed: 1, replies: [] }; }
+    text = lastCommand;
+  } else {
+    lastCommand = text;
+  }
+  const result = { ok: 0, failed: 0, replies: [] };
+  const reply = (say) => { result.replies.push(say); announce(say); };
+  // "abre la pinza y gira la base 20" -> two commands; so is "abrí la mano cerrá la mano" (a new verb starts a new command).
+  // Teaching a place is kept whole: "guardá esta posición para traer el vaso" must not become a fetch.
+  const teaching = SAVE_RE.test(text) || SAVE_RE2.test(text) || SAVE_RE3.test(text) || SAVE_RE_EN.test(text);
+  const parts = teaching ? [text]
+    : text.replace(anyVerb(), " , ").split(/\s*(?:,|;|\by luego\b|\bluego\b|\by despues\b|\by\b|\band\b|\bthen\b)\s*/i);
+  for (const part of parts.filter(Boolean)) {
+    try {
+      let action = everyday(part);
+      if (!action) {
+        const technical = parseCommand(part);
+        action = { ...technical, say: JOINT_WORDS[technical.joint] ?? "Listo" };
+      }
+      if (action.kind === "stop") {
+        if (torque) await stopArm();
+        logCommand(`› ${part} → STOP: holding position`);
+        reply("Me detengo");
+        result.ok++; result.stopped = true;
+        break;  // nothing after a stop runs
+      }
+      if (action.kind === "help" || action.kind === "chat" || action.kind === "say") { logCommand(`› ${part} → ${action.kind}`); reply(action.say); result.ok++; continue; }
+      if (macroRunning) {  // one errand at a time; "pará" (handled above) still works
+        const e = new Error("busy with a previous request"); e.say = "Estoy ocupado. Si quiere que pare, diga: pará."; throw e;
+      }
+      if (["vsearch", "vmark", "vrelease", "vgrasp"].includes(action.kind)) {  // wrist-camera teaching
+        logCommand(`› ${part} → ${{ vsearch: "save search pose", vmark: "mark cup", vrelease: "release here", vgrasp: "save grasp" }[action.kind]}`);
+        if (action.kind === "vsearch") reply(await saveSearchPose());
+        if (action.kind === "vmark") reply(await markCup());
+        if (action.kind === "vrelease") reply(torque ? await releaseHere(reply) : "Ya estoy suelto.");
+        if (action.kind === "vgrasp") reply(await saveGrasp());
+        result.ok++; continue;
+      }
+      if (action.kind === "places") {
+        const names = Object.keys(poses);
+        logCommand(`› ${part} → list places`);
+        reply(names.length ? `Conozco: ${names.join(", ")}.`
+          : "Todavía no conozco ningún lugar. Para enseñarme, lleve el brazo hasta ahí y diga: guardá esta posición como vaso.");
+        result.ok++; continue;
+      }
+      if (action.kind === "save") {
+        poses = await api("/api/poses/save", { name: action.name });
+        renderPlaces();
+        logCommand(`› ${part} → saved place "${action.name}"`);
+        reply(`Listo, guardé esta posición como ${action.name}.`);
+        result.ok++; continue;
+      }
+      if (action.kind === "forget") {
+        const name = findPlace(action.name);
+        if (name) { poses = await api("/api/poses/delete", { name }); renderPlaces(); }
+        logCommand(`› ${part} → forget "${action.name}"`);
+        reply(name ? `Listo, olvidé ${name}.` : `No conocía ${action.name}.`);
+        result.ok++; continue;
+      }
+      if (action.kind === "enable") { reply(action.say ?? "Estoy listo"); logCommand(`› ${part} → enable torque`); await longAction("/api/torque", { on: true }); result.ok++; continue; }
+      if (action.kind === "rest") { reply(action.say ?? "Vuelvo a descansar"); logCommand(`› ${part} → rest & release`); await longAction("/api/torque", { on: false }); result.ok++; continue; }
+      if (!torque) { const e = new Error("torque is off"); e.say = "Estoy apagado. Primero diga: robot, encender."; throw e; }
+      if (action.kind === "wave") { reply(action.say); logCommand(`› ${part} → wave`); await wave(); result.ok++; continue; }
+      if (action.kind === "fetch" && CUP_WORDS.test(action.name) && visionReady()) {
+        logCommand(`› ${part} → vision fetch (camera)`);  // the camera finds the cup wherever it is now
+        await visionFetch(reply);
+        result.ok++; continue;
+      }
+      if (action.kind === "go" || action.kind === "fetch") {
+        const name = findPlace(action.name);
+        if (!name) {
+          const e = new Error(`unknown place "${action.name}"`);
+          e.say = `No conozco ${action.name}. Para enseñarme, lleve el brazo hasta ahí y diga: guardá esta posición como ${action.name}.`;
+          throw e;
+        }
+        logCommand(`› ${part} → ${action.kind} "${name}"`);
+        await placeMacro(name, action.kind === "fetch", reply);
+        result.ok++; continue;
+      }
+      if (action.kind === "more") {
+        if (!lastMove) { const e = new Error("no previous move to continue"); e.say = "Primero dígame qué mover."; throw e; }
+        const j = window.lastState.joints[lastMove.joint], d = Math.round(lastMove.delta * action.factor) || Math.sign(action.factor) * 5;
+        reply(action.say);
+        const clipped = await sendMove(lastMove.joint, j.target + d);
+        logCommand(`› ${part} → ${lastMove.joint} ${d > 0 ? "+" : ""}${d}°${clipped}`);
+        result.ok++; continue;
+      }
+      const j = window.lastState.joints[action.joint];
+      const reachable = Math.min(Math.max(action.deg, j.min), j.max);
+      if (Math.abs(reachable - j.target) < 1 && Math.abs(action.deg - j.target) >= 1) {
+        // Already at the limit on that side: say so instead of claiming a move that won't happen.
+        logCommand(`› ${part} → ${action.joint} already at its limit`);
+        reply("No puedo moverlo más para ese lado.");
+        result.ok++; continue;
+      }
+      reply(action.say);
+      const clipped = await sendMove(action.joint, action.deg);
+      logCommand(`› ${part} → ${action.joint} ${action.why}${clipped}`);
+      result.ok++;
+    } catch (e) {
+      logCommand(`✗ ${part}: ${e.message || e}`, true);
+      result.failed++;
+      if (e.say) { result.replies.push(e.say); announce(e.say); break; }  // a real problem (e.g. robot off): stop here
+      // otherwise it's a meaningless fragment ("vuelve a girar..." -> "vuelve a"): skip it, keep going
+    }
+  }
+  if (!result.ok && result.failed && !result.replies.length) {  // nothing at all was understood
+    result.replies.push(FAIL_TEXT);
+    announce(FAIL_TEXT);
+  }
+  return result;
+}
+
+// ---------------- Voice commands: browser speech recognition -> the same parser ----------------
+// Chrome sends the audio to Google's speech service (needs internet); Safari uses Apple's.
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const LANG_KEY = "so101.voiceLang";
+const WAKE_WORD = /\brobot\b[\s,.!?]*/;
+// Pressing the mic, saying "robot", or giving a command opens a window where no wake word is
+// needed: talking feels natural, but a TV left on after a quiet spell still can't move the arm.
+const AWAKE_MS = 90000;  // long enough for the pauses of teaching by hand
+const voice = { rec: null, on: false, awakeUntil: 0 };
+
+try { $("lang").value = localStorage.getItem(LANG_KEY) || "es-AR"; } catch {}
+$("lang").onchange = () => {
+  try { localStorage.setItem(LANG_KEY, $("lang").value); } catch {}
+  if (voice.on) { stopVoice(); startVoice(); }  // restart in the new language
+};
+try { $("swaplr").checked = swapSides(); } catch {}
+$("swaplr").onchange = () => { try { localStorage.setItem(SIDE_KEY, $("swaplr").checked ? "1" : "0"); } catch {} };
+
+function speakText(text) {  // slightly slower than default, easier to follow
+  $("s-reply").textContent = text;
+  remoteLog(`robot says: "${text}"`);
+  if (!$("speakback").checked || !window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = $("lang").value;
+  u.rate = 0.9;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+// One spoken (or big-button) phrase. Stop words always work; anything else needs "robot" first
+// (unless "robot" was said alone a moment ago), so the TV or a family chat can't move the arm.
+async function handleSpeech(text, { button = false } = {}) {
+  const t = normalize(text);
+  $("heard").textContent = text;
+  $("s-heard").textContent = `“${text}”`;
+  if (isStopPhrase(t)) {  // safety first: stop words work anytime, without the wake word
+    logCommand(`🎤 "${text}"`);
+    return runCommands("para", speakText);
+  }
+  if (ATTENTION.test(t.replace(/[\s,.!?]+$/, ""))) {  // "oye", "oiga", "robot": open the conversation
+    voice.awakeUntil = Date.now() + AWAKE_MS;
+    remoteLog(`heard "${text}" -> attention call`);
+    return speakText("¿Sí? Lo escucho.");
+  }
+  let command = t;
+  if ($("wake").checked && !button) {
+    const m = t.match(WAKE_WORD);
+    if (!m && Date.now() > voice.awakeUntil) {
+      $("s-heard").textContent = `“${text}” (sin la palabra "robot": lo ignoro)`;
+      remoteLog(`heard "${text}" -> IGNORED (no wake word "robot")`);
+      return;
+    }
+    command = m ? t.slice(m.index + m[0].length) : t;
+  } else {
+    command = t.replace(WAKE_WORD, "");
+  }
+  voice.awakeUntil = Date.now() + AWAKE_MS;  // every accepted phrase keeps the conversation open
+  if (!command.trim()) return speakText("¿Sí? Lo escucho.");  // just "robot"
+  logCommand(`🎤 "${text}"`);
+  return runCommands(command, speakText);
+}
+
+function startVoice() {
+  if (!Recognition) return logCommand("✗ voice: this browser has no speech recognition. Use Chrome or Safari.", true);
+  const rec = new Recognition();
+  rec.lang = $("lang").value;
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (e) => {
+    if (window.speechSynthesis?.speaking) return;  // don't hear our own "Listo" as a command
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const text = e.results[i][0].transcript.trim();
+      $("heard").textContent = text;
+      if (e.results[i].isFinal && text) handleSpeech(text);
+    }
+  };
+  rec.onstart = () => remoteLog(`speech recognition started (${rec.lang})`);
+  rec.onerror = (e) => {
+    remoteLog(`speech recognition error: ${e.error}`);
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") stopVoice("microphone permission denied");
+    else if (e.error === "network") stopVoice("speech service unreachable: it needs internet");
+  };
+  rec.onend = () => { if (voice.on && voice.rec === rec) { try { rec.start(); } catch {} } };  // keep listening after silences
+  rec.start();
+  voice.rec = rec; voice.on = true;
+  voice.awakeUntil = Date.now() + AWAKE_MS;  // pressing the mic = "I'm talking to you now"
+  $("mic").textContent = "🔴 Listening... (click to stop)";
+  $("s-mic").textContent = "🔴 Escuchando... (toque para dejar de escuchar)";
+  $("mic").classList.add("listening"); $("s-mic").classList.add("listening");
+}
+
+function stopVoice(reason) {
+  voice.on = false;
+  voice.rec?.stop();
+  voice.rec = null;
+  $("mic").textContent = "🎤 Start listening";
+  $("s-mic").textContent = "🎤 Hablarle al robot";
+  $("mic").classList.remove("listening"); $("s-mic").classList.remove("listening");
+  if (reason) logCommand(`✗ voice stopped: ${reason}`, true);
+}
+
+$("mic").onclick = $("s-mic").onclick = () => (voice.on ? stopVoice() : startVoice());
+
+$("cmdform").onsubmit = (e) => {
+  e.preventDefault();
+  const raw = $("cmd").value.trim();
+  if (!raw || !window.lastState) return;
+  $("cmd").value = "";
+  runCommands(raw, $("speakback").checked ? speakText : () => {});
+};
+
+// ---------------- Simple mode: big buttons that say the same phrases ----------------
+const SIMPLE_KEY = "so101.simple";
+function setSimple(on) {
+  document.body.classList.toggle("simple", on);
+  $("simpletoggle").textContent = on ? "⚙️ Full panel" : "👵 Simple mode";
+  try { localStorage.setItem(SIMPLE_KEY, on ? "1" : "0"); } catch {}
+}
+$("simpletoggle").onclick = () => setSimple(!document.body.classList.contains("simple"));
+try { setSimple(localStorage.getItem(SIMPLE_KEY) === "1"); } catch {}
+for (const b of document.querySelectorAll("#simple [data-say]")) {
+  b.onclick = () => window.lastState && handleSpeech(b.dataset.say, { button: true });
+}
+loadPoses();
+loadVision();
+
+// Commands from other devices (SenseCAP Watcher -> watcher/arm_bridge.py -> /api/command) run through
+// the same interpreter as the page's own voice. The Watcher uses push-to-talk, so no wake word.
+setInterval(async () => {
+  if (!window.lastState) return;
+  let items = [];
+  try { items = await api("/api/inbox", {}); } catch { return; }
+  for (const item of items) {
+    if (item.event === "help_gesture") {
+      logCommand(`🖐 ${item.source}: open palm (help requested)`);
+      speakText("Vi que levantó la mano. ¿En qué lo puedo ayudar?");
+      continue;
+    }
+    logCommand(`🛰 ${item.source}: "${item.text}"`);
+    await handleSpeech(item.text, { button: true });
+  }
+}, 500);
+
+// Warn when the panel's page was updated on disk after this tab loaded it (an old tab once kept
+// running stale code and saved a "search pose" as a place).
+(async () => {
+  const fingerprint = async () => { const t = await (await fetch("/", { cache: "no-store" })).text(); return `${t.length}:${t.slice(-400)}`; };
+  let loaded;
+  try { loaded = await fingerprint(); } catch { return; }
+  setInterval(async () => {
+    try {
+      if ((await fingerprint()) !== loaded) {
+        showError("🔄 There's a new version of this panel: reload the page (Cmd+Shift+R).");
+        $("s-reply").textContent = "Hay una versión nueva del panel: recargue la página (Cmd+Shift+R).";
+      }
+    } catch {}
+  }, 20000);
+})();
+
+// ---------------- Color tracking demo: the base turns to follow an object ----------------
+// Same technique as OpenCV color tracking (HSV threshold + centroid), done on a small copy of
+// each frame in the browser, so nothing extra has to be installed.
+const W = 160, H = 90;         // analysis resolution: plenty for a centroid, cheap to scan
+const HUE_TOL = 16;            // degrees of hue around the picked color
+const MIN_PIXELS = 30;         // fewer matching pixels than this = object not visible
+const work = Object.assign(document.createElement("canvas"), { width: W, height: H });
+const wctx = work.getContext("2d", { willReadFrequently: true });
+const overlay = $("overlay"), octx = overlay.getContext("2d");
+const tracker = { hue: null, follow: false, smoothX: null, panBase: 0, lastDeg: null, lastSend: 0 };
+
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+  let h = 0;
+  if (d) {
+    h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+  }
+  return [h, max ? d / max : 0, max];
+}
+function hueDist(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+const mirrored = () => $("mirror").checked;
+function setStatus(text) { $("tstatus").textContent = text; }
+
+// Where the frame is actually drawn inside the box (the video uses object-fit: contain).
+function videoRect() {
+  const v = $("video"), bw = overlay.clientWidth, bh = overlay.clientHeight;
+  const vr = v.videoWidth / v.videoHeight || 16 / 9;
+  const w = vr > bw / bh ? bw : bh * vr, h = vr > bw / bh ? bw / vr : bh;
+  return { x: (bw - w) / 2, y: (bh - h) / 2, w, h };
+}
+
+overlay.addEventListener("click", (e) => {
+  if (!stream) return;
+  const r = videoRect(), box = overlay.getBoundingClientRect();
+  let u = (e.clientX - box.left - r.x) / r.w;
+  const v = (e.clientY - box.top - r.y) / r.h;
+  if (u < 0 || u > 1 || v < 0 || v > 1) return;
+  if (mirrored()) u = 1 - u;  // the analysis uses the raw, un-mirrored frame
+  wctx.drawImage($("video"), 0, 0, W, H);
+  const px = Math.min(W - 5, Math.max(0, Math.round(u * W) - 2));
+  const py = Math.min(H - 5, Math.max(0, Math.round(v * H) - 2));
+  const d = wctx.getImageData(px, py, 5, 5).data;  // average a 5x5 patch, not one noisy pixel
+  let r_ = 0, g = 0, b = 0;
+  for (let i = 0; i < d.length; i += 4) { r_ += d[i]; g += d[i + 1]; b += d[i + 2]; }
+  const n = d.length / 4, [h, s, val] = rgbToHsv(r_ / n, g / n, b / n);
+  if (s < 0.3 || val < 0.2) {
+    setStatus("That color is too pale or too dark to track: use a bright, saturated object (red, green, blue...).");
+    $("vstatus").textContent = "❌ That color is too pale/transparent: use a bright, opaque object (orange, red, blue).";
+    return speakText("Ese color es muy pálido o transparente. Use un objeto de color fuerte.");
+  }
+  tracker.hue = h;
+  $("swatch").style.background = `rgb(${r_ / n | 0}, ${g / n | 0}, ${b / n | 0})`;
+  $("follow").disabled = false;
+  setStatus("Color picked. Enable torque, then turn Follow on.");
+  $("vstatus").textContent = `✅ Color learned. Now say "marcá el vaso" (or press "Mark cup").`;
+  speakText("Aprendí el color. Ahora diga: marcá el vaso.");
+});
+
+function detect() {
+  const v = $("video");
+  if (!stream || tracker.hue === null || v.readyState < 2) return null;
+  wctx.drawImage(v, 0, 0, W, H);
+  const d = wctx.getImageData(0, 0, W, H).data;
+  let sx = 0, sy = 0, n = 0;
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    const [h, s, val] = rgbToHsv(d[i], d[i + 1], d[i + 2]);
+    if (s > 0.35 && val > 0.2 && hueDist(h, tracker.hue) < HUE_TOL) { sx += p % W; sy += (p / W) | 0; n++; }
+  }
+  return n >= MIN_PIXELS ? { x: sx / n / W, y: sy / n / H, n } : null;  // x, y in 0..1
+}
+
+function clearOverlay() {
+  const dpr = window.devicePixelRatio || 1;
+  if (overlay.width !== overlay.clientWidth * dpr) {
+    overlay.width = overlay.clientWidth * dpr; overlay.height = overlay.clientHeight * dpr;
+  }
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, overlay.clientWidth, overlay.clientHeight);
+}
+
+// Raw frame coordinates (0..1) -> overlay pixels, honoring the mirror option.
+function toOverlay(x, y, r = videoRect()) {
+  return [r.x + (mirrored() ? 1 - x : x) * r.w, r.y + y * r.h];
+}
+
+const HAND_LINKS = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11],
+  [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
+
+function drawHand(hand) {
+  clearOverlay();
+  if (!hand) return;
+  const r = videoRect(), pts = hand.landmarks.map((p) => toOverlay(p.x, p.y, r));
+  octx.strokeStyle = "#00ff88"; octx.lineWidth = 3;
+  octx.beginPath();
+  for (const [a, b] of HAND_LINKS) { octx.moveTo(...pts[a]); octx.lineTo(...pts[b]); }
+  octx.stroke();
+  octx.fillStyle = "#ffffff";
+  for (const [x, y] of pts) { octx.beginPath(); octx.arc(x, y, 3.5, 0, Math.PI * 2); octx.fill(); }
+  const [wx, wy] = pts[0];
+  octx.font = "600 15px system-ui"; octx.fillStyle = "#00ff88";
+  octx.fillText(hand.gesture.name, wx + 10, Math.min(wy + 22, overlay.clientHeight - 6));
+}
+
+function drawMarker(t) {
+  clearOverlay();
+  if (!t) return;
+  const r = videoRect();
+  const cx = r.x + (mirrored() ? 1 - t.x : t.x) * r.w, cy = r.y + t.y * r.h;
+  const rad = Math.max(12, Math.sqrt(t.n) * r.w / W);
+  octx.strokeStyle = "#00ff88"; octx.lineWidth = 3;
+  octx.beginPath(); octx.arc(cx, cy, rad, 0, Math.PI * 2); octx.stroke();
+  octx.beginPath(); octx.moveTo(cx - rad - 8, cy); octx.lineTo(cx + rad + 8, cy);
+  octx.moveTo(cx, cy - rad - 8); octx.lineTo(cx, cy + rad + 8); octx.stroke();
+}
+
+$("trange").oninput = () => { $("trangev").textContent = $("trange").value + "°"; };
+$("follow").onclick = () => {
+  tracker.follow = !tracker.follow;
+  // Follow turns the base around wherever it points right now.
+  tracker.panBase = window.lastState?.joints.shoulder_pan.target ?? 0;
+  tracker.smoothX = null; tracker.lastDeg = null;
+  $("follow").textContent = tracker.follow ? "Follow: ON" : "Follow: off";
+  $("follow").classList.toggle("following", tracker.follow);
+  if (!tracker.follow) setStatus("Follow stopped.");
+};
+
+// ---------------- Fingers -> 5 motors ----------------
+// Each finger drives one motor. Calibration learns how far THIS person's fingers open and close,
+// so a reduced range of motion (arthritis, stiffness) still covers the motor's full travel.
+const FINGER_MAP = [  // finger, joint, degrees of motor travel for the finger's full range (negative = reversed)
+  ["thumb", "gripper", 60],
+  ["index", "shoulder_pan", 60],
+  ["middle", "shoulder_lift", 30],
+  ["ring", "elbow_flex", 30],
+  ["pinky", "wrist_flex", 50],
+];
+const CALIBRATION_MS = 5000;
+const fingers = { range: null, calibrating: false, on: false, smooth: {}, v0: null, start: null, lastDeg: {}, lastSent: 0 };
+
+function fingerLevels(ratios) {  // 0 = fully bent, 1 = fully straight, for this person's hand
+  const out = {};
+  for (const [f, r] of Object.entries(ratios)) {
+    const [lo, hi] = fingers.range[f];
+    const v = Math.min(Math.max((r - lo) / Math.max(hi - lo, 1e-3), 0), 1);
+    fingers.smooth[f] = fingers.smooth[f] === undefined ? v : fingers.smooth[f] + 0.35 * (v - fingers.smooth[f]);
+    out[f] = fingers.smooth[f];
+  }
+  return out;
+}
+
+$("fcal").onclick = () => {
+  fingers.on = false; $("ffingers").checked = false; $("ffingers").disabled = true;
+  fingers.range = Object.fromEntries(FINGER_MAP.map(([f]) => [f, [Infinity, -Infinity]]));
+  fingers.calibrating = true;
+  setStatus("Calibrating: open your hand wide, then make a fist, a few times (5 s)...");
+  setTimeout(() => {
+    fingers.calibrating = false;
+    fingers.holdStatusUntil = Date.now() + 4000;  // keep the result readable for a moment
+    const weak = FINGER_MAP.filter(([f]) => !(fingers.range[f][1] - fingers.range[f][0] > 0.12)).map(([f]) => f);
+    if (weak.length) {
+      fingers.range = null;
+      return setStatus(`Calibration failed: barely saw ${weak.join(", ")} move. Keep the palm facing the camera and try again.`);
+    }
+    fingers.smooth = {};
+    $("ffingers").disabled = false;
+    setStatus("Calibrated. Enable torque, then tick 'Fingers → 5 motors'.");
+  }, CALIBRATION_MS);
+};
+
+$("ffingers").onchange = () => {
+  fingers.on = $("ffingers").checked;
+  fingers.v0 = null;  // re-anchored on the next frame: motors start from where they are, no jump
+  fingers.lastDeg = {};
+  if (fingers.on && tracker.follow) $("follow").click();  // the index finger owns the base now
+};
+
+function driveFingers(ratios) {
+  const lv = fingerLevels(ratios);
+  setStatus("Fingers: " + FINGER_MAP.map(([f]) => `${f} ${Math.round(lv[f] * 100)}%`).join(" · "));
+  if (!torque || busy) { fingers.v0 = null; return; }  // re-anchor after any pause: the base may have changed
+  if (!fingers.v0) {  // anchor: current finger levels = current motor targets
+    fingers.v0 = { ...lv };
+    fingers.start = Object.fromEntries(FINGER_MAP.map(([, j]) => [j, window.lastState.joints[j].target]));
+    return;
+  }
+  const targets = {};
+  for (const [f, joint, span] of FINGER_MAP) {
+    const deg = Math.round(fingers.start[joint] + (lv[f] - fingers.v0[f]) * span);
+    if (Math.abs(deg - (fingers.lastDeg[joint] ?? Infinity)) >= 2) targets[joint] = deg;  // ignore jitter
+  }
+  const now = Date.now();
+  if (!Object.keys(targets).length || now - fingers.lastSent < 150) return;
+  fingers.lastSent = now;
+  Object.assign(fingers.lastDeg, targets);
+  api("/api/targets", { targets }).catch(() => {});
+}
+
+$("tsource").onchange = () => {
+  const hand = $("tsource").value === "hand";
+  $("fcal").disabled = !hand;
+  $("follow").disabled = !hand && tracker.hue === null;
+  setStatus(hand ? "Show your hand to the camera." : "Click the object in the video to pick its color.");
+};
+
+// Pinch (thumb-index gap relative to hand size) -> gripper opening, 0..100%.
+function pinchToGripper(pinch) {
+  const j = window.lastState?.joints.gripper;
+  if (!j || !torque || busy) return;
+  const pct = Math.min(Math.max((pinch - 0.3) / 0.7, 0), 1);
+  const deg = Math.round(gripperDeg(pct * 100));
+  const now = Date.now();
+  if (tracker.lastGrip !== undefined && Math.abs(deg - tracker.lastGrip) < 4) return;
+  if (now - (tracker.lastGripSend || 0) < 200) return;
+  tracker.lastGrip = deg; tracker.lastGripSend = now;
+  api("/api/target", { joint: "gripper", deg }).catch(() => {});
+}
+
+setInterval(() => {
+  let t;
+  if ($("tsource").value === "hand") {
+    if (window.handStatus !== "ready") { clearOverlay(); return setStatus(`Hand model: ${window.handStatus || "not loaded"}`); }
+    const hand = stream ? window.detectHand() : null;
+    drawHand(hand);
+    drawVisionLayer();
+    if (hand && fingers.calibrating) {
+      for (const [f, r] of Object.entries(hand.fingers)) {
+        fingers.range[f] = [Math.min(fingers.range[f][0], r), Math.max(fingers.range[f][1], r)];
+      }
+      return;
+    }
+    if (fingers.on) {  // fingers own the motors: no follow, no pinch
+      if (hand) driveFingers(hand.fingers); else setStatus("Hand not visible: motors holding.");
+      return;
+    }
+    t = hand && { x: hand.x, y: hand.y, n: 400 };
+    if (hand && !tracker.follow && Date.now() > (fingers.holdStatusUntil || 0)) setStatus(`Hand: ${hand.gesture.name} (pinch ${hand.gesture.pinch.toFixed(2)})`);
+    if (hand && $("tpinch").checked) pinchToGripper(hand.gesture.pinch);  // works with or without Follow
+  } else {
+    t = detect();
+    drawMarker(t);
+    drawVisionLayer();
+  }
+  if (!tracker.follow) return;
+  if (!torque || busy) return setStatus("Enable torque to follow.");
+  if (!t) return setStatus("Not visible: holding position.");
+  // Smooth the position so camera noise doesn't make the arm jitter.
+  tracker.smoothX = tracker.smoothX === null ? t.x : tracker.smoothX + 0.35 * (t.x - tracker.smoothX);
+  const sign = $("tinvert").checked ? 1 : -1;
+  const deg = Math.round(sign * (tracker.smoothX - 0.5) * 2 * Number($("trange").value));
+  setStatus(`Following: object at ${Math.round(tracker.smoothX * 100)}% across, base ${deg > 0 ? "+" : ""}${deg}°`);
+  const now = Date.now();
+  if (tracker.lastDeg !== null && Math.abs(deg - tracker.lastDeg) < 2) return;  // ignore tiny changes
+  if (now - tracker.lastSend < 150) return;                                     // max ~7 commands/s
+  tracker.lastDeg = deg; tracker.lastSend = now;
+  api("/api/target", { joint: "shoulder_pan", deg: tracker.panBase + deg }).catch(() => {});
+}, 100);
+
+(async () => {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  await listCams(savedCam()).catch(() => {});
+  // Reopen the last camera automatically once the browser has already granted permission.
+  try {
+    const perm = await navigator.permissions.query({ name: "camera" });
+    if (perm.state === "granted") await startCam(savedCam()).catch(camError);
+  } catch { /* permission query unsupported (e.g. older Safari): wait for a click */ }
+})();
+</script>
+<script type="module">
+// ---------------- Hand tracking: MediaPipe Hands, served locally from /vendor ----------------
+// Exposes window.detectHand() for the tracking loop above; if this fails to load, everything
+// else on the page keeps working.
+import { FilesetResolver, HandLandmarker, ObjectDetector } from "/vendor/mediapipe/vision_bundle.mjs";
+
+const FINGERS = [[8, 6], [12, 10], [16, 14], [20, 18]];  // [tip, middle joint] for index..pinky
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+let landmarker = null, lastTs = -1;
+
+function gesture(lm) {
+  // A finger is extended when its tip is farther from the wrist than its middle joint.
+  const up = FINGERS.map(([tip, pip]) => dist(lm[tip], lm[0]) > dist(lm[pip], lm[0]));
+  const extended = up.filter(Boolean).length;
+  const pinch = dist(lm[4], lm[8]) / dist(lm[0], lm[9]);  // thumb-index gap / palm length
+  const name = pinch < 0.3 ? "pinch" : extended === 0 ? "fist" : extended === 4 ? "open hand"
+    : up[0] && extended === 1 ? "pointing" : up[0] && up[1] && extended === 2 ? "peace" : `${extended} fingers`;
+  return { name, pinch, extended };
+}
+
+// How straight each finger is, as a ratio that grows when the finger opens: fingertip-to-wrist
+// over knuckle-to-wrist (thumb: tip-to-pinky-base over palm width). 3D, in one common scale
+// (x is normalized to the frame width and y to its height), so it doesn't depend on distance.
+function fingerRatios(lm, aspect) {
+  const P = (i) => [lm[i].x * aspect, lm[i].y, lm[i].z * aspect];
+  const d = (a, b) => Math.hypot(...P(a).map((v, k) => v - P(b)[k]));
+  return {
+    thumb: d(4, 17) / d(5, 17),
+    index: d(8, 0) / d(5, 0),
+    middle: d(12, 0) / d(9, 0),
+    ring: d(16, 0) / d(13, 0),
+    pinky: d(20, 0) / d(17, 0),
+  };
+}
+
+window.detectHand = () => {
+  const video = document.getElementById("video");
+  if (!landmarker || video.readyState < 2) return null;
+  const ts = performance.now();
+  if (ts <= lastTs) return null;
+  lastTs = ts;
+  const res = landmarker.detectForVideo(video, ts);
+  if (!res.landmarks?.length) return null;
+  const lm = res.landmarks[0];
+  const aspect = video.videoWidth / video.videoHeight || 16 / 9;
+  return { x: lm[9].x, y: lm[9].y, landmarks: lm, gesture: gesture(lm), fingers: fingerRatios(lm, aspect) };  // 9 = palm center
+};
+
+// Object detector (EfficientDet-Lite0, COCO labels): finds the cup for vision grasping.
+let objectDetector = null, lastObjTs = -1;
+const CUP_LABELS = ["cup", "wine glass", "bottle", "bowl", "vase"];
+window.detectObjects = () => {
+  const video = document.getElementById("video");
+  if (!objectDetector || video.readyState < 2) return [];
+  const ts = performance.now();
+  if (ts <= lastObjTs) return [];
+  lastObjTs = ts;
+  const W = video.videoWidth, H = video.videoHeight;
+  return objectDetector.detectForVideo(video, ts).detections.map((d) => ({
+    label: d.categories[0].categoryName, score: d.categories[0].score,
+    x: (d.boundingBox.originX + d.boundingBox.width / 2) / W, y: (d.boundingBox.originY + d.boundingBox.height / 2) / H,
+    w: d.boundingBox.width / W, h: d.boundingBox.height / H,
+  }));
+};
+
+window.handStatus = "loading...";
+window.objectStatus = "loading...";
+let fileset = null;
+try {
+  fileset = await FilesetResolver.forVisionTasks("/vendor/mediapipe/wasm");
+  const options = (delegate) => ({
+    baseOptions: { modelAssetPath: "/vendor/mediapipe/hand_landmarker.task", delegate },
+    runningMode: "VIDEO", numHands: 1,
+  });
+  try { landmarker = await HandLandmarker.createFromOptions(fileset, options("GPU")); }
+  catch { landmarker = await HandLandmarker.createFromOptions(fileset, options("CPU")); }
+  window.handStatus = "ready";
+} catch (e) {
+  window.handStatus = `failed to load (${e.message || e})`;
+}
+try {
+  const options = (delegate) => ({
+    baseOptions: { modelAssetPath: "/vendor/mediapipe/efficientdet_lite0.tflite", delegate },
+    runningMode: "VIDEO", scoreThreshold: 0.25, maxResults: 5, categoryAllowlist: CUP_LABELS,
+  });
+  try { objectDetector = await ObjectDetector.createFromOptions(fileset, options("GPU")); }
+  catch { objectDetector = await ObjectDetector.createFromOptions(fileset, options("CPU")); }
+  window.objectStatus = "ready";
+} catch (e) {
+  window.objectStatus = `failed to load (${e.message || e})`;
+}
+</script>
+</body>
+</html>

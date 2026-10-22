@@ -3,3 +3,11 @@ data/
 __pycache__/
 *.pyc
 .DS_Store
+
+# SO-101 arm panel: downloaded assets (arm/fetch_assets.sh), per-setup calibration, camera frames
+arm/vendor/
+arm/sim/
+arm/camera_snapshot.jpg
+arm/poses.json
+arm/vision.json
+arm/*.tmp

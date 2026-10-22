@@ -1,0 +1,4 @@
+feetech-servo-sdk>=1.0.0
+pyserial>=3.5
+# Optional, only for the MuJoCo simulation (sim_primera.py):
+# mujoco>=3.1

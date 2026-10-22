@@ -15,6 +15,17 @@ source .venv/bin/activate
 
 No hardware: `python tools/fake_watcher.py --push http://127.0.0.1:8887` and use the port it prints.
 
+## SO-ARM101 arm
+[`arm/`](arm/README.md) is the arm side: a local web panel (voice in Spanish/English, big-button mode for older
+users, saved places, "bring me the cup" with the wrist camera, motor protection). To let the Watcher drive it:
+
+```bash
+cd arm && .venv/bin/python panel.py                                   # terminal A, then open http://127.0.0.1:8101 in Chrome
+python watcher/receiver.py --voice --arm --token <secret> --eui <EUI>  # terminal B
+```
+
+Push-to-talk on the Watcher ("bring me the cup", "turn left", "stop") and the open-palm gesture now reach the arm.
+
 ## With Claude Code
 Open this folder and run `claude`. `CLAUDE.md` holds the full context. A good first prompt:
 

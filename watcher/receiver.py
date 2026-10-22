@@ -29,6 +29,11 @@ Usage:
   python3 watcher/receiver.py --port 9000 --token secret
   python3 watcher/receiver.py --voice                         # + voice commands
   python3 watcher/receiver.py --mode uart --serial /dev/ttyUSB0   # pip install pyserial
+
+  # Drive the SO-101 arm (arm/panel.py must be running): voice transcripts and the
+  # open-palm gesture are forwarded to the arm panel. A token is mandatory, because
+  # otherwise anyone on the Wi-Fi could move the arm.
+  python3 watcher/receiver.py --voice --arm --token secret --eui 2CF7F1C98280008D
 """
 import argparse
 import base64
@@ -43,6 +48,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 IMG_DIR = os.path.join("data", "images")
 LOG_FILE = os.path.join("data", "events.jsonl")
+MAX_BODY_BYTES = 2_000_000  # a 240x240 JPEG in base64 is a few tens of KB
+BRIDGE = None  # ArmBridge when started with --arm
 
 
 # --------------------------------------------------------------------------
@@ -63,7 +70,8 @@ def on_event(evt: dict) -> None:
       "raw": original payload without the base64 image
     }
     """
-    pass  # e.g. requests.post("http://arm-controller/trigger", json=evt)
+    if BRIDGE:
+        BRIDGE.handle(evt)  # voice / open palm -> SO-101 arm panel
 
 
 # --------------------------------------------------------------------------
@@ -124,6 +132,8 @@ def make_handler(token: str | None):
             if token and self.headers.get("Authorization", "") not in (token, f"Device {token}"):
                 return self._reply(401, {"code": 401, "msg": "bad token"})
             length = int(self.headers.get("Content-Length", 0))
+            if length > MAX_BODY_BYTES:
+                return self._reply(413, {"code": 413, "msg": "payload too large"})
             try:
                 body = json.loads(self.rfile.read(length) or b"{}")
             except json.JSONDecodeError:
@@ -210,11 +220,12 @@ def run_uart(port: str, baud: int) -> None:
 # --------------------------------------------------------------------------
 SST = re.compile(r"vi: sst_text: ?(.*)")
 DIRECTION = re.compile(r"\b(up|down|left|right)\b")
+ARM_WORDS = re.compile(r"\b(arm|move)\b")  # whole words: "alarm" or "farm" must not count
 
 
 def parse_command(text: str) -> str | None:
     t = text.lower()
-    if "arm" not in t and "move" not in t:
+    if not ARM_WORDS.search(t):
         return None
     m = DIRECTION.search(t)
     return f"arm_{m.group(1)}" if m else None
@@ -233,10 +244,12 @@ def run_voice(port: str, baud: int) -> None:
             if not m:
                 continue
             text = m.group(1).strip()
-            command = parse_command(text)
-            if not command:
-                print(f"(voice, not a command) {text!r}", flush=True)
+            if not text:
                 continue
+            # Every transcript is emitted: the arm panel understands much more than the four
+            # arm_* directions ("bring me the cup", "open the hand", "stop"...). `command` is
+            # still filled in for the simple direction phrases, and None otherwise.
+            command = parse_command(text)
             emit({
                 "source": "voice",
                 "received_at": datetime.now().isoformat(timespec="seconds"),
@@ -261,7 +274,16 @@ if __name__ == "__main__":
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--voice", metavar="PORT", nargs="?", const="auto",
                     help="voice commands from the Watcher's USB-C console (port auto-detected if omitted)")
+    ap.add_argument("--arm", metavar="URL", nargs="?", const="http://127.0.0.1:8101/api/command",
+                    help="forward voice and the open-palm gesture to the SO-101 arm panel")
+    ap.add_argument("--eui", default=None, help="with --arm: only accept HTTP alarms from this device EUI")
     a = ap.parse_args()
+    if a.arm:
+        if a.mode == "http" and not a.token:
+            sys.exit("--arm needs --token: otherwise anyone on the Wi-Fi could move the arm.")
+        from arm_bridge import ArmBridge  # watcher/ is on sys.path when run as a script
+        BRIDGE = ArmBridge(a.arm, a.eui)
+        print(f"Forwarding to the arm panel at {a.arm}" + (f" (device {a.eui} only)" if a.eui else ""))
     if a.voice == "auto":
         from control import find_console  # watcher/ is on sys.path when run as a script
         a.voice = find_console(a.baud)
