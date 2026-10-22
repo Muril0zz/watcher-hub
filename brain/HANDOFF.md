@@ -2,6 +2,13 @@
 
 Oct 23, 2026 · Murilo Leite Filho · live version: https://claude.ai/artifact/5NkfzTSwq1ZM4ye7HPtkMt
 
+> [!CAUTION]
+> **ACTION REQUIRED, for the teammate who set up Marco on xiaozhi.me** (only that account can do this; Murilo has no access):
+>
+> 1. Log in to xiaozhi.me → 控制台 → Marco's device → 配置角色, choose a Chinese + English voice and paste the role text from the "Marco" section below. Without this, Marco keeps saying "sorry, I can't move the arm".
+> 2. Open → MCP接入点 and send the `wss://api.xiaozhi.me/mcp/?token=...` address to Murilo privately. Without it, Marco only drives the arm while plugged into the Mac by USB.
+> 3. Or, if you prefer to hand Marco over: delete Marco from your account. It will then show a 6-digit code on its screen, and Murilo can bind it to his own account (a device can only belong to one account at a time).
+
 ## TL;DR
 
 The black arm is demo-ready: you talk to it in any language (from the Mac page or through Marco, the SenseCAP Watcher) and it moves, with Claude understanding the request and a spoken reply in the same language. The white arm is blocked by a faulty elbow servo; everything for vision-based picking is written but untested on hardware.
