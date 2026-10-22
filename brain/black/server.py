@@ -510,6 +510,33 @@ def start_sequence(intents: list, lang: str):
     threading.Thread(target=run_sequence, args=(intents, lang, arm.seq), daemon=True).start()
 
 
+ENGLISH = re.compile(r"\b(turn|go|left|right|up|down|wave|open|close|stop|the|please|move|all|way|a bit|hand|arm)\b",
+                     re.IGNORECASE)
+CONFIRM = {  # short spoken confirmations for the instant path
+    "left": ("Virando para a esquerda", "Turning left"), "right": ("Virando para a direita", "Turning right"),
+    "up": ("Subindo", "Going up"), "down": ("Descendo", "Going down"), "center": ("Ao centro", "Back to center"),
+    "home": ("Em pé", "Standing up"), "side": ("Para o lado", "To the side"), "open": ("Abrindo", "Opening"),
+    "close": ("Fechando", "Closing"), "spin": ("Girando o punho", "Turning the wrist"),
+    "roll_full": ("Girando o punho todo", "Full wrist turn"), "wave": ("Olá!", "Hello!"), "nod": ("Sim!", "Yes!"),
+    "shake": ("Não!", "No!"), "show": ("Lá vai o show!", "Showtime!"), "faster": ("Mais rápido", "Faster"),
+    "slower": ("Mais devagar", "Slower"), "stop": ("Parei", "Stopped"), "wrist_up": ("Mão para cima", "Hand up"),
+    "wrist_down": ("Mão para baixo", "Hand down"), "invert": ("Lados trocados", "Sides swapped"),
+}
+
+
+def confirmation(intents, lang: str) -> str:
+    pt = (lang or "pt")[:2] != "en"
+    parts = []
+    for i in intents:
+        words = CONFIRM.get(i.name)
+        if words:
+            text = words[0 if pt else 1]
+            if i.amount == "max" and i.name in ("left", "right", "up", "down"):
+                text += " até o fim" if pt else " all the way"
+            parts.append(text)
+    return ", ".join(parts) or ("Ok" if pt else "OK")
+
+
 def handle_text(text: str, lang_hint: str = "pt", quiet: bool = False, addressed: bool = False) -> dict:
     """Any language: Claude picks the intents and the reply; the keyword parser is the offline fallback.
     quiet: don't speak on the Mac (the Watcher answers out loud itself)."""
@@ -535,7 +562,7 @@ def handle_text(text: str, lang_hint: str = "pt", quiet: bool = False, addressed
     if intents is not None:
         lang = (lang_hint or "pt")[:2]
         start_sequence(intents, lang)
-        say = "Ok" if lang == "pt" else "OK"
+        say = confirmation(intents, lang)
         arm.lang = lang
         arm.log(f"heard: {text} -> fast {[i.name for i in intents]}", say=say)
         speak(say, lang)
@@ -603,6 +630,7 @@ def camera_jpg():
 
 WATCHER_HEARD = re.compile(r"Application: >> (.+?)\s*$")
 WAKE_WORDS = {"marco", "你好小智", "小智", "hi esp", "hey marco"}
+WATCHER_QUIET = "--watcher-quiet" in sys.argv  # default: the Mac speaks the reply for Watcher commands
 # one-word answers to Marco's own questions ("Yes." made the arm nod): conversation, not commands
 SMALL_TALK = {"yes", "no", "ok", "okay", "yeah", "yep", "nope", "sure", "thanks", "thank you", "sim", "não", "nao",
               "tá", "ta", "beleza", "好", "好的", "是", "是的", "不", "不是", "对", "嗯", "谢谢"}
@@ -634,9 +662,16 @@ def watcher_bridge():
                         if heard.lower().strip(" .!?,。！，") in SMALL_TALK:
                             arm.log(f"[watcher] {heard} (answer to Marco, not a command)")
                             continue
-                        lang = "zh" if re.search(r"[\u4e00-\u9fff]", heard) else "pt"
+                        if re.search(r"[\u4e00-\u9fff]", heard):
+                            lang = "zh"
+                        elif ENGLISH.search(heard):
+                            lang = "en"
+                        else:
+                            lang = "pt"
                         arm.log(f"[watcher] {heard}")
-                        threading.Thread(target=handle_text, args=(heard, lang, True, True), daemon=True).start()
+                        # the Mac answers (Marco's cloud assistant doesn't know about the arm and says it can't
+                        # move it): turn Marco's knob all the way down and let the arm's own voice reply
+                        threading.Thread(target=handle_text, args=(heard, lang, WATCHER_QUIET, True), daemon=True).start()
             except Exception as e:  # unplugged, busy, reset: try again
                 arm.log(f"watcher bridge: {e}")
                 time.sleep(3)
