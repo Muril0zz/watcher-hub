@@ -30,7 +30,7 @@ time.sleep(4)
 for text in sys.argv[1:]:
     before = state()["measured"]
     reply = send(text)
-    time.sleep(7)
+    time.sleep(float(__import__("os").environ.get("WAIT", "7")))
     after = state()["measured"]
     moved = {k: round(after[k] - before[k]) for k in after if abs(after[k] - before[k]) >= 3}
     print(f"{text!r}: intents {reply.get('intents')} say {reply.get('say')!r}")

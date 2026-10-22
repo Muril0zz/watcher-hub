@@ -134,6 +134,7 @@ class Arm:
         self.show_requested = False
         self.stop_requested = False
         self.hold = False  # frozen after touching something, until the next command
+        self.seq = 0  # bumped by every new command: a running multi-step sequence stops when it changes
         self.lang = "pt"
         self.events = deque(maxlen=40)
         threading.Thread(target=self._run, daemon=True).start()
@@ -414,7 +415,7 @@ class Arm:
                     self.queue.append({key: clamp(base[key] - amp, ROLL_LIMIT if key == "roll" else WRIST_LIMIT)})
                 self.queue.append({key: base[key]})
                 if name == "wave":
-                    self.queue.appendleft({"h": 1.0, "grip": 100.0})
+                    self.queue.appendleft({"grip": 100.0})  # wave at the current height (keeps an earlier "down")
                 return {"wave": ("Olá!", "Hello!"), "shake": ("Não, não", "No, no"), "nod": ("Sim!", "Yes!")}[name][0 if pt else 1]
             if name in ("faster", "slower"):
                 factor = 1.5 if name == "faster" else 1 / 1.5
@@ -471,12 +472,48 @@ def index():
     return FileResponse(ROOT / "static" / "index.html")
 
 
+def wait_settled(seq: int, timeout: float = 12.0) -> bool:
+    """Wait until the arm has reached the current target and finished any gesture. False if a newer
+    command (or stop) took over meanwhile."""
+    time.sleep(0.2)  # let the loop pick up the new target
+    end, calm = time.time() + timeout, 0
+    while time.time() < end:
+        if arm.seq != seq:
+            return False
+        busy = arm.queue or arm.show_requested or arm.status in ("moving", "show")
+        calm = 0 if busy else calm + 1
+        if calm >= 3:
+            return True
+        time.sleep(0.1)
+    return arm.seq == seq
+
+
+def run_sequence(intents: list, lang: str, seq: int):
+    """Several instructions in one sentence: one after the other, each waiting for the arm to arrive."""
+    for n, intent in enumerate(intents):
+        if arm.seq != seq:
+            return
+        arm.apply(intent, lang, camera)
+        if n < len(intents) - 1 and not wait_settled(seq):
+            return
+
+
+def start_sequence(intents: list, lang: str):
+    arm.seq += 1
+    if len(intents) <= 1:
+        for i in intents:
+            arm.apply(i, lang, camera)
+        return
+    threading.Thread(target=run_sequence, args=(intents, lang, arm.seq), daemon=True).start()
+
+
 def handle_text(text: str, lang_hint: str = "pt") -> dict:
     """Any language: Claude picks the intents and the reply; the keyword parser is the offline fallback."""
     text = text.strip()
     if not text:
         return {"heard": text, "intents": [], "say": ""}
     if STOP_WORDS.match(text):
+        arm.seq += 1  # cancels a running sequence
         arm.apply(Intent("stop"), lang_hint, camera)
         arm.log(f"heard: {text} -> STOP")
         return {"heard": text, "intents": ["stop"], "say": ""}
@@ -493,8 +530,8 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
         intents = parse(text).intents
         if intents and all(i.name != "goto_color" for i in intents):
             lang = (lang_hint or "pt")[:2]
-            replies = [arm.apply(i, lang, camera) for i in intents]
-            say = ". ".join(replies)
+            start_sequence(intents, lang)
+            say = "Ok" if lang == "pt" else "OK"
             arm.lang = lang
             arm.log(f"heard: {text} -> fast {[i.name for i in intents]}", say=say)
             speech.speak(say, lang)
@@ -505,8 +542,8 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
     except Exception as e:
         arm.log(f"Claude unavailable ({e}); keyword fallback")
         intents = parse(text).intents
-        replies = [arm.apply(i, lang_hint, camera) for i in intents] or ["Não entendi"]
-        say = ". ".join(replies)
+        start_sequence(intents, lang_hint)
+        say = "Ok" if intents else "Não entendi"
         speech.speak(say, "pt")
         return {"heard": text, "intents": [i.name for i in intents], "say": say, "spoken": True}
     lang = plan["language"] or lang_hint
@@ -514,14 +551,14 @@ def handle_text(text: str, lang_hint: str = "pt") -> dict:
     names = [i["name"] for i in plan["intents"]]
     arm.log(f"heard: {text} -> {lang} {names} ({time.time() - t0:.1f}s)", say=plan["reply"])
     speech.speak(plan["reply"], lang)
-    for i in plan["intents"]:
-        arm.apply(Intent(i["name"], amount=i["amount"], degrees=i["degrees"]), lang, camera)
+    start_sequence([Intent(i["name"], amount=i["amount"], degrees=i["degrees"]) for i in plan["intents"]], lang)
     return {"heard": text, "intents": names, "say": plan["reply"], "spoken": True, "language": lang}
 
 
 @app.post("/command")
 def command(body: CommandIn):
     if body.intent:  # page buttons: no need to ask Claude
+        arm.seq += 1
         replies = [arm.apply(Intent(body.intent, amount=body.amount, color=body.color), body.lang, camera)]
         return {"heard": body.text, "intents": [body.intent], "say": ". ".join(replies)}
     return handle_text(body.text, body.lang)
