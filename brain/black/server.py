@@ -606,7 +606,18 @@ def command(body: CommandIn):
 @app.post("/api/command")  # same shape as the Watcher bridge sends
 async def api_command(request: Request):
     body = await request.json()
-    return handle_text(body.get("text", ""))
+    text = body.get("text", "")
+    if body.get("source") == "marco-mcp":
+        # Marco's cloud called its move_arm tool (marco_mcp.py): it is addressed to the arm and Marco
+        # answers out loud itself, so the Mac stays quiet
+        if re.search(r"[一-鿿]", text):
+            lang = "zh"
+        elif ENGLISH.search(text):
+            lang = "en"
+        else:
+            lang = "pt"
+        return handle_text(text, lang, quiet=True, addressed=True)
+    return handle_text(text)
 
 
 @app.post("/audio")

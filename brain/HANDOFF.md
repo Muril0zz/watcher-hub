@@ -3,11 +3,15 @@
 Oct 23, 2026 · Murilo Leite Filho · live version: https://claude.ai/artifact/5NkfzTSwq1ZM4ye7HPtkMt
 
 > [!CAUTION]
-> **ACTION REQUIRED, for the teammate who set up Marco on xiaozhi.me** (only that account can do this; Murilo has no access):
+> **ACTION REQUIRED, for the teammate who set up Marco on xiaozhi.me: make Marco drive the arm over Wi-Fi** (only your account can do this; keep Marco in your account, do NOT remove it). About 15 minutes, on the Mac that has the black arm plugged in:
 >
-> 1. Log in to xiaozhi.me → 控制台 → Marco's device → 配置角色, choose a Chinese + English voice and paste the role text from the "Marco" section below. Without this, Marco keeps saying "sorry, I can't move the arm".
-> 2. Open → MCP接入点 and send the `wss://api.xiaozhi.me/mcp/?token=...` address to Murilo privately. Without it, Marco only drives the arm while plugged into the Mac by USB.
-> 3. Or, if you prefer to hand Marco over: delete Marco from your account. It will then show a 6-digit code on its screen, and Murilo can bind it to his own account (a device can only belong to one account at a time).
+> 1. On the Mac, the arm server must be running WITHOUT the USB bridge (otherwise every command would run twice): `cd brain/black && ../../.venv/bin/python -u server.py /dev/tty.usbmodem5B790830241 preto --no-watcher`
+> 2. xiaozhi.me → 控制台 → Marco's agent → **MCP接入点** (MCP access point): copy the `wss://api.xiaozhi.me/mcp/?token=...` address. It is a secret: do not paste it in the repo or a group chat.
+> 3. In a second terminal on the Mac: `cd brain/black && MARCO_MCP_ENDPOINT='wss://...the address...' ../../.venv/bin/python marco_mcp.py` and leave it running. It prints "connected to Marco's MCP access point"; the console page should then list the tools `move_arm` and `stop_arm`.
+> 4. xiaozhi.me → Marco's agent → **配置角色**: pick a Chinese + English voice (中英) and paste into 角色介绍: *You are Marco, the voice of a robot arm on the table. When the user asks the arm to move or gesture, ALWAYS call the move_arm tool with their request in their own words, then confirm in at most five words, like "OK, turning right". If they say stop, call stop_arm. Never say you cannot move the arm. Answer in the language the user spoke (Chinese, Cantonese or English).* Save.
+> 5. Test: "Marco, move the arm all the way down" → the arm moves and Marco says "OK". Marco no longer needs the USB cable (only power); the Mac must stay on, online, with the arm plugged in and both programs running.
+>
+> Tested: `marco_mcp.py` against a simulated access point (`test_marco_mcp.py`): initialize, tools/list, tools/call (the arm turned 20 deg), ping all OK. Not yet tested against the real xiaozhi.me endpoint.
 
 ## TL;DR
 
@@ -85,7 +89,7 @@ Marco's cloud assistant does not know an arm exists, so it apologises even thoug
 
 **Without a cable (wireless): the MCP endpoint**
 
-xiaozhi.me lets an agent call external tools through an "MCP接入点" (MCP access point): a secret `wss://api.xiaozhi.me/mcp/?token=...` address in the console. A small program on the Mac connects to it and offers Marco a tool such as `move_arm(command)` that forwards to `http://127.0.0.1:8000/api/command`. Then Marco calls the arm itself over Wi-Fi, needs no USB cable, and stops saying it can't move (it now has the tool). This needs the console login above; the code is about one page ([an example bridge, mcp_pipe.py](https://glama.ai/mcp/servers/@suhuail/api-mcp/blob/8ccf37a0ba9be14ab7425ca4fc3f99214ec89c79/mcp_pipe.py)).
+xiaozhi.me lets an agent call external tools through an "MCP接入点" (MCP access point): a secret `wss://api.xiaozhi.me/mcp/?token=...` address in the console. `brain/black/marco_mcp.py` (ready, see the action box at the top) connects to it and offers Marco the tool `move_arm(command)` that forwards to `http://127.0.0.1:8000/api/command`. Then Marco calls the arm itself over Wi-Fi, needs no USB cable, and stops saying it can't move (it now has the tool). This needs the console login above; the code is about one page ([an example bridge, mcp_pipe.py](https://glama.ai/mcp/servers/@suhuail/api-mcp/blob/8ccf37a0ba9be14ab7425ca4fc3f99214ec89c79/mcp_pipe.py)).
 
 ## How to run it
 
