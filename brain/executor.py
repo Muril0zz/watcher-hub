@@ -25,7 +25,8 @@ DEFAULT_POSES = {
     "forward": {"shoulder_pan": 0, "shoulder_lift": 45, "elbow_flex": 45, "wrist_flex": 0, "wrist_roll": 0},
     "look_table": {"shoulder_pan": 0, "shoulder_lift": 20, "elbow_flex": -10, "wrist_flex": 60, "wrist_roll": 0},
     # high up, camera tipped down as far as this wrist goes: sees the whole table in front
-    "overview": {"shoulder_pan": 0, "shoulder_lift": 0, "elbow_flex": 0, "wrist_flex": 63, "wrist_roll": 0},
+    # (shoulder +10, forearm -5: camera ~12 deg off straight down; at 0/0 it looked too far ahead)
+    "overview": {"shoulder_pan": 0, "shoulder_lift": 10, "elbow_flex": -5, "wrist_flex": 63, "wrist_roll": 0},
     "give": {"shoulder_pan": 0, "shoulder_lift": 40, "elbow_flex": 40, "wrist_flex": 0, "wrist_roll": 0},
 }
 CAMERA_HFOV = 60.0
