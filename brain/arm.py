@@ -164,7 +164,10 @@ class Arm:
             if j in DISABLED:
                 self._w1(i, ADDR_TORQUE_ENABLE, 0)
                 continue
-            self._w2(i, ADDR_GOAL, pos[j])
+            # hold where it is, but inside its range: a joint folded by hand past its limit (wrist at 68 deg
+            # with a 67 deg stop) made the servo fight its own limit and dip the supply on torque-on
+            lo, hi = RANGES[j]
+            self._w2(i, ADDR_GOAL, max(lo, min(hi, pos[j])))
             # gentle starts: a hard start dips the 12 V supply; the two joints that lift weight get the softest
             self._w1(i, ADDR_ACCEL, 2 if j in ("shoulder_lift", "elbow_flex") else 8)
             self._w2(i, ADDR_SPEED, self.speed)
