@@ -105,7 +105,7 @@ async def serve(endpoint: str):
         except Exception as e:
             print(f"connection lost ({e}); retrying in {delay}s", flush=True)
             await asyncio.sleep(delay)
-            delay = min(delay * 2, 60)
+            delay = min(delay * 2, 10)  # 60 s left Marco without the arm for a minute after a Wi-Fi drop
 
 
 if __name__ == "__main__":
