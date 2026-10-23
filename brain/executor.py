@@ -149,6 +149,8 @@ class Executor:
     def _do(self, a: dict) -> str | None:
         kind = a["type"]
         self.log(f"action: { {k: v for k, v in a.items() if v is not None} }")
+        if kind == "pose" and a["name"] == "look_table":
+            kind = "look"  # "look at the table" = go up and look down, never the low pose over the cup spot
         if kind == "pose":
             self.go_pose(a["name"] or "ready")
         elif kind == "move":

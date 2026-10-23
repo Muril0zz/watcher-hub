@@ -202,6 +202,7 @@ def state():
     except ArmError as e:
         joints = {"error": str(e)}
     return JSONResponse({"joints": joints, "torque": arm.torque, "busy": executor.busy.locked(),
+                         "cup_pan": executor.cup_pan,
                          "events": list(events)[-25:], "model": planner.MODEL})
 
 

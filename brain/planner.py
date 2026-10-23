@@ -53,7 +53,8 @@ Action vocabulary (use only these; keep plans short, max 8 actions):
   the cup", "give it to me"): possible=true, a cheerful reply that you are moving the cup, never refuse them.
 - {"type":"look"}   look down at the table from above and tell the person what is on it, then ask whether
   they want something picked up. Use it (and only it) whenever they ask what you see / what is there / what is
-  on the table, in any language; the reply is then just a short "let me look" (the look itself does the talking).
+  on the table, or say "look at the table", "look down", "look", in any language; the reply is then just a short
+  "let me look" (the look itself does the talking). Never use the look_table pose for these.
 - {"type":"speed","value":percent}   50 = slower, 150 = faster (affects following moves).
 - {"type":"wait","value":seconds}
 - {"type":"stop"}
