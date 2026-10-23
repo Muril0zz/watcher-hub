@@ -265,6 +265,18 @@ class Arm:
             self.torque = False
             raise ArmError("power drop: the motors rebooted (check the 12 V supply)")
 
+    def grip_to(self, steps: int, timeout: float = 3.0) -> bool:
+        """Close to a known width (an object we already measured) with limited force; same squeeze every
+        time. True if something stopped the jaws before that width."""
+        i = JOINTS["gripper"]
+        self._w2(i, ADDR_TORQUE_LIMIT, GRIP_TORQUE)
+        self._w2(i, ADDR_SPEED, 300)
+        self._w2(i, ADDR_GOAL, steps)
+        end = time.time() + timeout
+        while time.time() < end and abs(self._r2(i, ADDR_POSITION) - steps) > 12:
+            time.sleep(0.05)
+        return self.gripper_contact()
+
     def grip(self, timeout: float = 4.0) -> bool:
         """Close until the jaws feel the object, then hold just a touch past that point, so a paper cup
         (about 7.5 cm, four fingers wide) is held, not crushed. True if it is holding something."""

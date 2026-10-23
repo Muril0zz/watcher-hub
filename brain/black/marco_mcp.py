@@ -22,10 +22,12 @@ TOOLS = [
     {
         "name": "move_arm",
         "description": (
-            "Moves the robot arm on the table. Call it whenever the user asks the arm to do anything: turn "
-            "left/right, go up/down (all the way or a bit), center, stand up, open/close the hand, turn the "
-            "wrist, wave, nod yes, shake no, dance, go faster/slower, or stop. Pass the user's request in their "
-            "own words and language, e.g. 'go all the way down and wave' or '向左转一点'. Returns what the arm did."
+            "Controls the robot arm on the table, which has a camera on its wrist. Call it whenever the user "
+            "asks the arm to do anything or asks what it sees: what is on the table, pick up / move the cup, "
+            "bring the cup back, turn left/right, go up/down, open/close the hand, wave, nod yes, shake no, "
+            "rest, or stop. Pass the user's request in their own words and language, e.g. 'what do you see?', "
+            "'pick up the cup', 'go back and get the cup' or '向左转一点'. Returns the sentence to say to the user: "
+            "say it exactly as returned."
         ),
         "inputSchema": {
             "type": "object",
@@ -48,8 +50,10 @@ def call_arm(text: str) -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=60) as r:
         out = json.load(r)
+    if "plan" in out or "ok" in out:  # the white arm's brain (brain/server.py, port 8200)
+        return out.get("say") or (out.get("plan") or {}).get("reply") or "The arm could not do that."
     if out.get("status") and not out.get("intents"):
         return f"The arm is not ready ({out['status']}): someone must stand it up by hand."
     if not out.get("intents"):

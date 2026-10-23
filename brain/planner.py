@@ -45,9 +45,10 @@ Action vocabulary (use only these; keep plans short, max 8 actions):
 - {"type":"push","target":"description","direction":"left|right|forward"}
 - {"type":"point","target":"description"}   turn and point the gripper at it.
 - {"type":"give"}   bring what it holds to the person (delivery spot) and open the gripper.
-- {"type":"relocate","direction":"left|right"}   DEMO: pick up the cup standing in front of the arm, carry it far
-  to one side (left unless they say right) and set it down there. Use THIS (not pick) whenever the person asks to
-  pick up, grab, take, move or carry the cup (or "it" after you offered the cup), in any language.
+- {"type":"relocate","direction":"left|right|back"}   DEMO: pick up the cup where the arm last left it, carry it
+  and set it down (left unless they say right; "back" = return it to the spot in front, for "bring it back",
+  "go back and get the cup", "put it back"). Use THIS (not pick) whenever the person asks to pick up, grab, take,
+  move, bring back or carry the cup (or "it" after you offered the cup), in any language.
 - {"type":"look"}   look down at the table from above and tell the person what is on it, then ask whether
   they want something picked up. Use it (and only it) whenever they ask what you see / what is there / what is
   on the table, in any language; the reply is then just a short "let me look" (the look itself does the talking).
@@ -80,7 +81,7 @@ ACTION = {
         "value": {"type": ["number", "null"]},
         "relative": {"type": ["boolean", "null"]},
         "target": {"type": ["string", "null"]},
-        "direction": {"anyOf": [{"type": "string", "enum": ["left", "right", "forward"]}, {"type": "null"}]},
+        "direction": {"anyOf": [{"type": "string", "enum": ["left", "right", "forward", "back"]}, {"type": "null"}]},
     },
 }
 PLAN_SCHEMA = {

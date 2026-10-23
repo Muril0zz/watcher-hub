@@ -61,7 +61,8 @@ def handle_text(text: str, source: str) -> dict:
     if STOP_WORDS.match(text):
         executor.stop()
         return {"ok": True, "stopped": True}
-    speech.chime()
+    if source != "marco-mcp":
+        speech.chime()
     executor.stop()  # a new request replaces whatever was running
     t0 = time.time()
     prompt = text + (watcher_link.NOTE if source == "watcher" else "")
@@ -73,12 +74,43 @@ def handle_text(text: str, source: str) -> dict:
         return {"ok": False, "error": str(e)}
     log(f"plan in {time.time() - t0:.1f}s ({plan['language']}, possible={plan['possible']}): "
         f"{[{k: v for k, v in a.items() if v is not None} for a in plan['actions']]}")
+    if source == "marco-mcp":
+        # Marco called its move_arm tool over Wi-Fi and speaks what we return; the Mac stays quiet
+        return {"ok": True, "plan": plan, "say": run_for_marco(plan)}
     say(plan["reply"], plan["language"])
     if DRY_RUN:
         log("dry run: arm not moved")
     else:
         threading.Thread(target=executor.run, args=(plan,), daemon=True).start()
     return {"ok": True, "plan": plan}
+
+
+def run_for_marco(plan: dict) -> str:
+    """A look is waited for, so Marco can say what is on the table; longer moves run in the background
+    and Marco just says the reply."""
+    log(f"[marco] {plan['reply']}")
+    if DRY_RUN:
+        return plan["reply"]
+    if plan["actions"] and all(a["type"] == "look" for a in plan["actions"]):
+        spoken = []
+        old = executor.say
+        executor.say = lambda text, lang: (spoken.append(text), log(f"[marco says] {text}"))
+        try:
+            executor.run(plan)
+        finally:
+            executor.say = old
+        return " ".join(spoken) or plan["reply"]
+    quiet = executor.say
+    threading.Thread(target=_run_quiet, args=(plan, quiet), daemon=True).start()
+    return plan["reply"]
+
+
+def _run_quiet(plan: dict, restore):
+    executor.say = lambda text, lang: log(f"[marco] {text}")  # failures are logged, Marco already answered
+    try:
+        executor.run(plan)
+    finally:
+        executor.say = restore
 
 
 @app.get("/")
