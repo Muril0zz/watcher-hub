@@ -48,6 +48,7 @@ JAW_LEN = 0.10  # wrist pitch axis to jaw tips
 # lowest wrist height: jaw tips ~1.5 cm above the table (estimated). -0.06 pushed the jaws into the table
 TOP_LOW_Z = -0.03  # backstop only (the table height is an estimate); the load rise below is what stops it
 JAW_AIM = (0.5, 0.65)  # where in the image (top-down) the closing jaws meet the table
+PROBE_PAN, PROBE_X = 4, 0.015  # test moves that measure how the image moves (bigger ones lost the pen)
 CREEP_RISE = 150  # load rise (x0.1 %) over the hovering baseline that means the jaws touched something
 CUP_SPOT = (0.094, -0.062)  # demo: where the cup stands (wrist x, z from the shoulder axis; base at 0)
 # gripper steps for the demo cup (~7.5 cm, four fingers): the jaws first touched the uncrushed cup at 2437;
@@ -70,6 +71,9 @@ FAIL = {
                 "en": "I touched something, probably the table, so I backed off.",
                 "zh": "我碰到了东西，可能是桌子，已经退回来了。", "es": "Toqué algo, probablemente la mesa, y retrocedí."},
     "stopped": {"pt": "Parei.", "en": "Stopped.", "zh": "已停止。", "es": "Me detuve."},
+    "network": {"pt": "Perdi a conexão por um instante. Pode pedir de novo?",
+                "en": "I lost my connection for a moment. Could you ask again?",
+                "zh": "网络刚才断了一下，请再说一次。", "es": "Perdí la conexión un momento. ¿Puedes pedirlo otra vez?"},
     "retry": {"pt": "Não deu, vou tentar de novo.", "en": "Missed it, trying again.", "zh": "没成功，我再试一次。",
               "es": "No salió, lo intento de nuevo."},
 }
@@ -159,6 +163,10 @@ class Executor:
             except ArmError as e:
                 self.log(f"arm error: {e}")
                 self.say(fail_text("power", lang), lang)
+                return False
+            except Exception as e:  # e.g. the venue Wi-Fi dropped a Claude call mid-search: say so, don't go silent
+                self.log(f"run error: {type(e).__name__}: {e}")
+                self.say(fail_text("network", lang), lang)
                 return False
 
     # ---- actions ----------------------------------------------------------------------------
@@ -482,30 +490,38 @@ class Executor:
             return "notfound"
         self.log(f"top pick: under the camera at reach {x:.2f}, base {pan:.0f}")
         # probes: how the object moves in the image per degree of base and per metre of reach
-        self.arm.move_deg({"shoulder_pan": pan + 6}, timeout=6)
+        self.arm.move_deg({"shoulder_pan": pan + PROBE_PAN}, timeout=6)
         p1 = self._see(description)
-        self._down_to(x + 0.02, z)
+        self._down_to(x + PROBE_X, z)
         p2 = self._see(description)
         if not (p1 and p2):
             return "notfound"
-        j = [[(p1[0] - p0[0]) / 6, (p2[0] - p1[0]) / 0.02], [(p1[1] - p0[1]) / 6, (p2[1] - p1[1]) / 0.02]]
+        j = [[(p1[0] - p0[0]) / PROBE_PAN, (p2[0] - p1[0]) / PROBE_X], [(p1[1] - p0[1]) / PROBE_PAN, (p2[1] - p1[1]) / PROBE_X]]
         det = j[0][0] * j[1][1] - j[0][1] * j[1][0]
         self.log(f"top pick: image moves per deg/m {j}")
         if abs(det) < 1e-4:
             return "notfound"
-        pan, x, cur = pan + 6, x + 0.02, p2
-        for _ in range(4):  # centre it under the jaws
+        pan, x, cur = pan + PROBE_PAN, x + PROBE_X, p2
+        scale = 1.0
+        for _ in range(6):  # centre it under the jaws, in small damped steps (the view is narrow)
             ex, ey = JAW_AIM[0] - cur[0], JAW_AIM[1] - cur[1]
             if math.hypot(ex, ey) < 0.05:
                 break
-            dpan = (j[1][1] * ex - j[0][1] * ey) / det
-            dx = (-j[1][0] * ex + j[0][0] * ey) / det
-            pan += max(-15.0, min(15.0, dpan))
-            x = max(TOP_X_RANGE[0], min(TOP_X_RANGE[1], x + max(-0.04, min(0.04, dx))))
+            dpan = 0.6 * scale * (j[1][1] * ex - j[0][1] * ey) / det
+            dx = 0.6 * scale * (-j[1][0] * ex + j[0][0] * ey) / det
+            new_pan = pan + max(-5.0, min(5.0, dpan))
+            new_x = max(TOP_X_RANGE[0], min(TOP_X_RANGE[1], x + max(-0.015, min(0.015, dx))))
+            self.arm.move_deg({"shoulder_pan": new_pan}, timeout=6)
+            self._down_to(new_x, z)
+            seen = self._see(description)
+            if seen:
+                pan, x, cur = new_pan, new_x, seen
+                continue
+            # stepped it out of view: go back to where it was seen and try half the step
             self.arm.move_deg({"shoulder_pan": pan}, timeout=6)
             self._down_to(x, z)
-            cur = self._see(description)
-            if not cur:
+            scale /= 2
+            if scale < 0.2:
                 return "notfound"
         # turn the jaws (they close along the image's width) across the object's narrow side, safe way only
         frame = self.camera.latest(newer_than=time.time())
