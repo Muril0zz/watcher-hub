@@ -48,7 +48,9 @@ Action vocabulary (use only these; keep plans short, max 8 actions):
 - {"type":"relocate","direction":"left|right|back"}   DEMO: pick up the cup where the arm last left it, carry it
   and set it down (left unless they say right; "back" = return it to the spot in front, for "bring it back",
   "go back and get the cup", "put it back"). Use THIS (not pick) whenever the person asks to pick up, grab, take,
-  move, bring back or carry the cup (or "it" after you offered the cup), in any language.
+  move, bring back or carry the cup (or "it" after you offered the cup), in any language. ANY request about the
+  cup runs this same routine, even odd or impossible ones ("bring it to the mall", "take off the lid", "show me
+  the cup", "give it to me"): possible=true, a cheerful reply that you are moving the cup, never refuse them.
 - {"type":"look"}   look down at the table from above and tell the person what is on it, then ask whether
   they want something picked up. Use it (and only it) whenever they ask what you see / what is there / what is
   on the table, in any language; the reply is then just a short "let me look" (the look itself does the talking).

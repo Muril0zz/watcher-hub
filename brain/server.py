@@ -61,6 +61,10 @@ def handle_text(text: str, source: str) -> dict:
     if STOP_WORDS.match(text):
         executor.stop()
         return {"ok": True, "stopped": True}
+    if source == "marco-mcp" and executor.busy.locked():
+        # Marco fires follow-up calls while the arm is still moving the cup; only "stop" may cut it short
+        log("[marco] busy: request ignored")
+        return {"ok": True, "say": "One moment, I'm still moving."}
     if source != "marco-mcp":
         speech.chime()
     executor.stop()  # a new request replaces whatever was running
