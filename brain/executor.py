@@ -392,11 +392,26 @@ class Executor:
         self._level_to(min(x, 0.12), LIFT_Z, steps=3)  # then all the way up, still level
         return None
 
+    def _where_is_cup(self) -> float:
+        """Base angle of the spot the cup is on: look straight down at the remembered spot first, then the
+        other one. Falls back to memory if the camera finds it at neither."""
+        for pan in (self.cup_pan, 0 if self.cup_pan else RELOCATE_PAN):
+            self._check()
+            self.arm.move_deg({"wrist_roll": 0})
+            self.go_pose("look_table")
+            self.arm.move_deg({"shoulder_pan": pan}, timeout=10)
+            if vision.find(self.camera, "a paper cup standing on the table", after=time.time()):
+                self.log(f"cup seen at the {pan:.0f} deg spot")
+                return pan
+        self.log(f"cup not seen at either spot; trying the remembered one ({self.cup_pan:.0f})")
+        return self.cup_pan
+
     def _relocate(self, direction: str) -> str | None:
         """Demo, no camera: the cup stands at the marked spot (base angle self.cup_pan). Come down beside
         it, turn the wrist, grip gently, lift, swing the base to the other spot, set it down there, let go,
         and come back up to the middle. direction "back" returns it to the spot in front."""
         x, z = CUP_SPOT
+        self.cup_pan = self._where_is_cup()  # trust the camera, not memory: grabs can miss, people move it
         if direction == "back":
             to_pan = 0
         else:
@@ -411,6 +426,12 @@ class Executor:
         for r in (-30, -60, GRAB_ROLL):  # the safe way, in steps
             self.arm.move_deg({"wrist_roll": r}, timeout=3)
         self.arm.grip_to(CUP_GRIP_STEPS)  # the cup's own width: same gentle squeeze going and coming back
+        # holding the cup stops the jaws short of that width; closing on air reaches it
+        if self.arm.positions()["gripper"] < CUP_GRIP_STEPS + 10:
+            self.arm.move_deg({"gripper": 100}, timeout=3)
+            self._level_to(x, z + 0.10, steps=2)
+            self.arm.move_deg({"wrist_roll": 0})
+            return "nograb"
         self._level_to(x, z + 0.10, steps=2)  # lift it
         self.arm.move_deg({"shoulder_pan": to_pan}, timeout=10)  # carry it to the other spot
         self._level_to(x, z + 0.005, steps=2)  # set it down

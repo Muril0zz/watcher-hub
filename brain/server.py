@@ -147,6 +147,26 @@ def stop():
     return {"ok": True}
 
 
+@app.post("/spot")
+def spot():
+    """Demo setup: lower the open gripper, turned as for grabbing, onto the front cup spot, so the cup can
+    be placed exactly between the jaws."""
+    def go():
+        try:
+            from executor import CUP_SPOT, GRAB_ROLL
+            x, z = CUP_SPOT
+            arm.move_deg({"wrist_roll": 0, "shoulder_pan": 0, "gripper": 100})
+            executor._level_to(x, z + 0.08, steps=3)
+            executor._level_to(x, z, steps=2)
+            arm.move_deg({"wrist_roll": GRAB_ROLL}, timeout=4)
+            executor.cup_pan = 0
+            log("at the cup spot: place the cup between the jaws")
+        except ArmError as e:
+            log(f"arm error: {e}")
+    threading.Thread(target=go, daemon=True).start()
+    return {"ok": True}
+
+
 @app.post("/teach/{name}")
 def teach(name: str):
     executor.teach_start()

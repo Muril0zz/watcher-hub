@@ -22,8 +22,10 @@ TOOLS = [
     {
         "name": "move_arm",
         "description": (
-            "Controls the robot arm on the table, which has a camera on its wrist. Call it whenever the user "
-            "asks the arm to do anything or asks what it sees: what is on the table, pick up / move the cup, "
+            "Controls the robot arm on the table, which has a camera on its wrist. Call it ONLY when the user "
+            "clearly gives the arm an instruction or asks what it sees; never for background talk, people "
+            "chatting with each other, or partial sentences, and only once per instruction. Examples: what is "
+            "on the table, pick up / move the cup, "
             "bring the cup back, turn left/right, go up/down, open/close the hand, wave, nod yes, shake no, "
             "rest, or stop. Pass the user's request in their own words and language, e.g. 'what do you see?', "
             "'pick up the cup', 'go back and get the cup' or '向左转一点'. Returns the sentence to say to the user: "
