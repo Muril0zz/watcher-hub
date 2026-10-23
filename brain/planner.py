@@ -45,6 +45,9 @@ Action vocabulary (use only these; keep plans short, max 8 actions):
 - {"type":"push","target":"description","direction":"left|right|forward"}
 - {"type":"point","target":"description"}   turn and point the gripper at it.
 - {"type":"give"}   bring what it holds to the person (delivery spot) and open the gripper.
+- {"type":"look"}   look down at the table from above and tell the person what is on it, then ask whether
+  they want something picked up. Use it (and only it) whenever they ask what you see / what is there / what is
+  on the table, in any language; the reply is then just a short "let me look" (the look itself does the talking).
 - {"type":"speed","value":percent}   50 = slower, 150 = faster (affects following moves).
 - {"type":"wait","value":seconds}
 - {"type":"stop"}
@@ -67,7 +70,7 @@ ACTION = {
     "required": ["type", "name", "joint", "value", "relative", "target", "direction"],
     "properties": {
         "type": {"type": "string", "enum": ["pose", "move", "gripper", "gesture", "pick", "push", "point", "give",
-                                            "speed", "wait", "stop"]},
+                                            "look", "speed", "wait", "stop"]},
         "name": {"type": ["string", "null"]},
         "joint": {"anyOf": [{"type": "string", "enum": ["base", "shoulder", "elbow", "wrist_pitch", "wrist_roll"]},
                            {"type": "null"}]},
@@ -152,6 +155,30 @@ def plan(transcript: str, jpeg: bytes | None, joints: dict, out_of_service: list
                 "moving/rotating the wrist, the gripper and gestures all work.")
     content.append({"type": "text", "text": f"Joint angles now: {json.dumps(joints)}{note}\nPerson said: {transcript}"})
     return _structured(content, PLAN_SCHEMA, system=SYSTEM)
+
+
+DESCRIBE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["reply"],
+    "properties": {"reply": {"type": "string"}},
+}
+LANG_NAMES = {"pt": "Brazilian Portuguese", "en": "English", "zh": "Simplified Chinese", "yue": "Cantonese",
+              "es": "Spanish"}
+
+
+def describe(jpeg: bytes, language: str) -> str:
+    """What is on the table in this top-down wrist-camera photo, ending with an offer to pick something up."""
+    content = [
+        _image_block(jpeg),
+        {"type": "text", "text": (
+            "Photo from the robot arm's wrist camera, looking down at the table in front of it (the gripper "
+            "jaws may show at the edge: ignore them). Tell the person, in two short spoken sentences, which "
+            "objects are on the table (name them simply, with colour or where they are: left, right, in "
+            "front), then ask whether they want you to pick one of them up. If the table is empty, say so. "
+            f"Write it in {LANG_NAMES.get(language, language)}, warm and simple, no lists.")},
+    ]
+    return _structured(content, DESCRIBE_SCHEMA, max_tokens=400)["reply"]
 
 
 def locate(jpeg: bytes, description: str) -> dict | None:

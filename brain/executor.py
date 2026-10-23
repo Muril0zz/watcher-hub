@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 
+import planner
 import vision
 from arm import RANGES, Arm, ArmError, Contact, deg_to_steps, steps_to_deg
 
@@ -157,6 +158,13 @@ class Executor:
                 time.sleep(0.1)
         elif kind == "stop":
             self.arm.stop()
+        elif kind == "look":
+            self.go_pose("overview")  # high up, camera down: the whole table in view
+            frame = self.camera.latest(newer_than=time.time() + 0.3)  # a frame taken after the arm settled
+            jpeg = self.camera.jpeg(frame)
+            if not jpeg:
+                return "notfound"
+            self.say(planner.describe(jpeg, self.lang), self.lang)
         elif kind == "give":
             self.go_pose("give")
             self.arm.move_deg({"gripper": 100}, timeout=3)
