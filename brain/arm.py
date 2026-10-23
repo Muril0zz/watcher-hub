@@ -14,7 +14,8 @@ from pathlib import Path
 
 import scservo_sdk as scs
 
-PORT = "/dev/tty.usbmodem5B901033751"
+# the new white arm (Oct 23); the old one with the dead elbow was usbmodem5B901033751
+PORT = os.environ.get("BRAIN_ARM_PORT", "/dev/tty.usbmodem5B7A0010951")
 BAUD = 1_000_000
 JOINTS = {"shoulder_pan": 1, "shoulder_lift": 2, "elbow_flex": 3, "wrist_flex": 4, "wrist_roll": 5, "gripper": 6}
 
@@ -39,11 +40,16 @@ TORQUE_LIMITS = {"shoulder_pan": 500, "shoulder_lift": 650, "elbow_flex": 550, "
                  "wrist_roll": 400, "gripper": 400}
 CONTACT_FRACTION = 0.8  # load at this fraction of the joint's torque limit = touching something
 BACK_OFF_STEPS = 70  # ~6 degrees away from whatever it touched
-# Joints kept limp and never commanded. The white arm's elbow servo (id 3) pulls the 12 V supply down to
-# ~5 V whenever it produces torque, even 3 degrees at 35% (brain/elbow_probe.py); until it is replaced
-# the forearm hangs free. Set BRAIN_DISABLED_JOINTS="" once a healthy servo is fitted.
-DISABLED = {j for j in os.environ.get("BRAIN_DISABLED_JOINTS", "elbow_flex").split(",") if j}
+# Joints kept limp and never commanded (e.g. BRAIN_DISABLED_JOINTS=elbow_flex for a dead servo; the old
+# white arm's elbow pulled the 12 V supply down whenever it produced torque). The new arm's are all healthy.
+DISABLED = {j for j in os.environ.get("BRAIN_DISABLED_JOINTS", "").split(",") if j}
+# Degrees keep one meaning for the planner (elbow: -100 folded .. +87 stretched); this arm's elbow servo
+# counts the other way (folded reads +94), so its steps are mirrored around the middle.
+JOINT_SIGN = {"elbow_flex": -1}
 HOT_C = 60
+# the new white arm folded on the table (steps, read Oct 23): rest pose when it starts up standing
+FOLDED = {"shoulder_pan": 2048, "shoulder_lift": 860, "elbow_flex": 3080, "wrist_flex": 1674, "wrist_roll": 2048,
+          "gripper": 2044}
 
 ADDR_TORQUE_ENABLE, ADDR_ACCEL, ADDR_GOAL, ADDR_SPEED, ADDR_TORQUE_LIMIT = 40, 41, 42, 46, 48
 ADDR_POSITION, ADDR_LOAD, ADDR_VOLTAGE, ADDR_TEMP, ADDR_MOVING = 56, 60, 62, 63, 66
@@ -51,12 +57,12 @@ ADDR_POSITION, ADDR_LOAD, ADDR_VOLTAGE, ADDR_TEMP, ADDR_MOVING = 56, 60, 62, 63,
 STEPS_PER_DEG = 4096 / 360
 
 
-def deg_to_steps(deg: float) -> int:
-    return round(2048 + deg * STEPS_PER_DEG)
+def deg_to_steps(deg: float, joint: str = "") -> int:
+    return round(2048 + JOINT_SIGN.get(joint, 1) * deg * STEPS_PER_DEG)
 
 
-def steps_to_deg(steps: int) -> float:
-    return (steps - 2048) / STEPS_PER_DEG
+def steps_to_deg(steps: int, joint: str = "") -> float:
+    return JOINT_SIGN.get(joint, 1) * (steps - 2048) / STEPS_PER_DEG
 
 
 class ArmError(Exception):
@@ -83,10 +89,16 @@ class Arm:
         self.last_pos: dict[str, int] = {}
         if missing:
             raise ArmError(f"motors not answering: {missing} (12 V supply on?)")
-        self.speed = 600  # steps/s
+        if not LIMITS_FILE.exists():  # no measured limits: the servos' own EEPROM limits, ~3.5 deg inside
+            for j, i in JOINTS.items():
+                if j not in DISABLED:
+                    RANGES[j] = (self._r2(i, 9) + 40, self._r2(i, 11) - 40)
+        self.speed = 300  # steps/s; 600 lifting the stretched-out arm browned out the 12 V supply
         self.torque = False
         self.stop_flag = threading.Event()
         self.rest = self.positions()  # wherever it is at start-up is "rest" (start it folded)
+        if steps_to_deg(self.rest["shoulder_lift"], "shoulder_lift") > -80:  # started standing, not folded
+            self.rest = dict(FOLDED)
 
     # ---- low level ----------------------------------------------------------------------
     def _r1(self, motor_id, addr):
@@ -132,7 +144,7 @@ class Arm:
 
     def degrees(self) -> dict[str, float]:
         pos = self.positions()
-        out = {j: round(steps_to_deg(s), 1) for j, s in pos.items() if j != "gripper"}
+        out = {j: round(steps_to_deg(s, j), 1) for j, s in pos.items() if j != "gripper"}
         lo, hi = RANGES["gripper"]
         out["gripper"] = round(100 * (pos["gripper"] - lo) / (hi - lo))
         return out
@@ -150,7 +162,8 @@ class Arm:
                 self._w1(i, ADDR_TORQUE_ENABLE, 0)
                 continue
             self._w2(i, ADDR_GOAL, pos[j])
-            self._w1(i, ADDR_ACCEL, 8)  # gentle starts: a hard start from the folded pose dips the 12 V supply
+            # gentle starts: a hard start dips the 12 V supply; the two joints that lift weight get the softest
+            self._w1(i, ADDR_ACCEL, 2 if j in ("shoulder_lift", "elbow_flex") else 8)
             self._w2(i, ADDR_SPEED, self.speed)
             self._w2(i, ADDR_TORQUE_LIMIT, TORQUE_LIMITS.get(j, 1000))
             self._w1(i, ADDR_TORQUE_ENABLE, 1)
@@ -196,7 +209,7 @@ class Arm:
                 lo, hi = RANGES["gripper"]
                 steps[j] = lo + (hi - lo) * max(0.0, min(100.0, v)) / 100
             else:
-                steps[j] = deg_to_steps(v)
+                steps[j] = deg_to_steps(v, j)
         return self.move_steps(steps, wait, timeout)
 
     def stop(self):

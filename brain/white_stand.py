@@ -24,8 +24,8 @@ STRAIGHT = max(lo_e, hi_e + 40 - 2048)
 # Lifting the shoulder with the forearm stretched out dipped the 12 V supply and rebooted every servo;
 # keep the weight close to the shoulder axis: half-lift folded, open the elbow a bit, then the rest.
 STAGES = [
-    ("shoulder halfway, folded", {"shoulder_lift": A.deg_to_steps(-35)}),
-    ("open elbow a bit", {"elbow_flex": A.deg_to_steps(30)}),
+    ("shoulder halfway, folded", {"shoulder_lift": A.deg_to_steps(-35, "shoulder_lift")}),
+    ("open elbow a bit", {"elbow_flex": A.deg_to_steps(-30, "elbow_flex")}),
     ("shoulder to vertical", {"shoulder_lift": 2048}),
     ("straighten elbow", {"elbow_flex": STRAIGHT}),
     ("wrist straight", {"wrist_flex": 2048, "wrist_roll": 2048}),

@@ -140,7 +140,7 @@ class Executor:
         """Staged so the 12 V supply is not hit by every joint at once: rising, the shoulder goes first
         (forearm still folded, short lever); going to rest, the wrist first and the shoulder last."""
         if name == "rest":
-            goal = {j: steps_to_deg(s) for j, s in self.arm.rest.items() if j != "gripper"}
+            goal = {j: steps_to_deg(s, j) for j, s in self.arm.rest.items() if j != "gripper"}
             self.arm.move_deg({k: goal[k] for k in ("shoulder_pan", "wrist_flex", "wrist_roll")})
             self.arm.move_deg({"elbow_flex": goal["elbow_flex"]})
             self.arm.move_deg({"shoulder_lift": goal["shoulder_lift"]}, timeout=10)
@@ -223,7 +223,7 @@ class Executor:
             if target.box["h"] >= NEAR_SIZE or target.box["y"] >= 0.8:
                 return True
             d = self.arm.degrees()
-            if d["shoulder_lift"] >= steps_to_deg(RANGES["shoulder_lift"][1]) - 3:
+            if d["shoulder_lift"] >= steps_to_deg(RANGES["shoulder_lift"][1], "shoulder_lift") - 3:
                 return False  # leaning as far as it goes: out of reach
             self.arm.move_deg({"shoulder_lift": d["shoulder_lift"] + 5, "elbow_flex": d["elbow_flex"] + 4,
                                "wrist_flex": d["wrist_flex"] - 3})
@@ -269,7 +269,7 @@ class Executor:
         self.arm.release()
 
     def teach_save(self, name: str) -> dict:
-        d = {j: round(steps_to_deg(s), 1) for j, s in self.arm.positions().items() if j != "gripper"}
+        d = {j: round(steps_to_deg(s, j), 1) for j, s in self.arm.positions().items() if j != "gripper"}
         self.poses[name] = d
         POSES_FILE.write_text(json.dumps(self.poses, indent=2))
         self.arm.enable()  # hold the taught pose
