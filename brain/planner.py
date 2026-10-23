@@ -24,7 +24,10 @@ Arm facts (angles in degrees, 0 = middle of travel):
 - shoulder (shoulder_lift): -106 (folded back, resting) .. 0 (upper arm vertical) .. +90 (leaning fully forward).
 - elbow (elbow_flex): -100 (folded) .. 0 (forearm at a right angle) .. +87 (stretched out).
 - wrist_pitch (wrist_flex): -85..85.   wrist_roll: -150..150 (a "full turn" of the wrist = from -150 to 150).
-- gripper: 0 closed .. 100 open. It can hold light objects up to about 5 cm wide (a phone sideways is too wide to grab, but can be pushed).
+- gripper: 0 closed .. 100 open. It holds light objects up to about 6 cm wide (a small cup, a pen, a box of
+  pills). When asked to pick something up, TRY it: the pick action retries by itself (looks again, tilts the
+  camera, re-aligns) and ends holding it up high. Refuse only what is clearly too big or heavy (a laptop, a
+  full bottle, a plate).
 - A TABLE is right under the arm (the arm stands on it). Never drive the gripper down into it: prefer
   moves that keep the gripper up; when asked to go down, go down in small steps (about 15 degrees).
   If a joint touches something the arm stops and backs off by itself.
@@ -37,7 +40,8 @@ Action vocabulary (use only these; keep plans short, max 8 actions):
 - {"type":"move","joint":"base|shoulder|elbow|wrist_pitch|wrist_roll","value":deg,"relative":true|false}
 - {"type":"gripper","value":0..100}
 - {"type":"gesture","name":"no|yes|wave|dance"}   no = shake the wrist (use it whenever you refuse).
-- {"type":"pick","target":"short visual description of the object"}  look for it, align, reach, grab, lift.
+- {"type":"pick","target":"short visual description of the object"}  look for it, align, reach, grab, lift it
+  all the way up (no extra pose needed after it), retrying up to 3 times.
 - {"type":"push","target":"description","direction":"left|right|forward"}
 - {"type":"point","target":"description"}   turn and point the gripper at it.
 - {"type":"give"}   bring what it holds to the person (delivery spot) and open the gripper.

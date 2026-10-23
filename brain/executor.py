@@ -5,6 +5,7 @@ depends on guessing which way a joint turns. Pick/push/point are "eye in hand": 
 object once, local tracking keeps it centered while the base turns and the arm leans in.
 """
 import json
+import math
 import threading
 import time
 from pathlib import Path
@@ -21,12 +22,26 @@ DEFAULT_POSES = {
     "up": {"shoulder_pan": 0, "shoulder_lift": 0, "elbow_flex": 80, "wrist_flex": 0, "wrist_roll": 0},
     "forward": {"shoulder_pan": 0, "shoulder_lift": 45, "elbow_flex": 45, "wrist_flex": 0, "wrist_roll": 0},
     "look_table": {"shoulder_pan": 0, "shoulder_lift": 20, "elbow_flex": -10, "wrist_flex": 60, "wrist_roll": 0},
+    # high up, camera tipped down as far as this wrist goes: sees the whole table in front
+    "overview": {"shoulder_pan": 0, "shoulder_lift": 0, "elbow_flex": 0, "wrist_flex": 63, "wrist_roll": 0},
     "give": {"shoulder_pan": 0, "shoulder_lift": 40, "elbow_flex": 40, "wrist_flex": 0, "wrist_roll": 0},
 }
 CAMERA_HFOV = 60.0
 ALIGN_TOL = 0.04  # |x - 0.5| considered centered
 NEAR_SIZE = 0.45  # object this tall in the image = within the gripper's reach
+# Side grasp (cups and other upright things): gripper kept level, placed by 2-link inverse kinematics in
+# the arm's vertical plane. Metres; the shoulder axis height is an estimate, so the camera also trims it.
+L1, L2 = 0.116, 0.135  # SO-101 upper arm and forearm
+SHOULDER_H = 0.10  # shoulder_lift axis above the table
+GRAB_Z = 0.045 - SHOULDER_H  # jaws ~4.5 cm above the table
+SIDE_X0, SIDE_X_MAX, SIDE_STEP = 0.10, 0.21, 0.015  # 0.21: shoulder ~75 deg, inside its limit
+LIFT_Z = 0.15  # "all the way up", still level so a cup stays upright
+CLOSE_W = 0.5  # object this wide in the image = between the jaws
+GRAB_ROLL = 90  # wrist turn just before closing, so the jaws close sideways on a cup
+AIM_Y = 0.62  # the jaws close on what sits a bit below the image centre
 SCAN = (0, 25, -25, 45, -45)
+SCAN_WIDE = (0, 30, -30, 60, -60, 85, -85)
+PICK_ATTEMPTS = 3
 
 FAIL = {
     "notfound": {"pt": "Não encontrei {t}.", "en": "I couldn't find {t}.", "zh": "我没有找到{t}。", "es": "No encontré {t}."},
@@ -37,7 +52,26 @@ FAIL = {
                 "en": "I touched something, probably the table, so I backed off.",
                 "zh": "我碰到了东西，可能是桌子，已经退回来了。", "es": "Toqué algo, probablemente la mesa, y retrocedí."},
     "stopped": {"pt": "Parei.", "en": "Stopped.", "zh": "已停止。", "es": "Me detuve."},
+    "retry": {"pt": "Não deu, vou tentar de novo.", "en": "Missed it, trying again.", "zh": "没成功，我再试一次。",
+              "es": "No salió, lo intento de nuevo."},
 }
+
+
+def level_ik(x: float, z: float) -> dict:
+    """Joint angles (planner degrees) that put the wrist at (x forward, z up) from the shoulder axis with the
+    gripper level. Elbow 0 = right angle, + stretches; wrist + tips the gripper down."""
+    d = min(math.hypot(x, z), L1 + L2 - 0.005)
+    acos = lambda v: math.degrees(math.acos(max(-1.0, min(1.0, v))))  # noqa: E731
+    phi = acos((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2))  # interior angle at the elbow
+    s = math.degrees(math.atan2(x, z)) - acos((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d))
+    e = phi - 90
+    return {"shoulder_lift": s, "elbow_flex": e, "wrist_flex": e - s}
+
+
+def reachable(x: float, z: float) -> bool:
+    """Level gripper at (x, z) within this arm's joint limits (shoulder forward limit ~78, wrist >= -100)."""
+    a = level_ik(x, z)
+    return math.hypot(x, z) < L1 + L2 - 0.01 and a["shoulder_lift"] <= 75 and a["wrist_flex"] >= -98
 
 
 def fail_text(key: str, lang: str, target: str = "") -> str:
@@ -58,7 +92,8 @@ class Executor:
         self.pan_sign = 1.0  # learned while aligning: which way the image moves when the base turns
         self.stop_event = threading.Event()
         self.busy = threading.Lock()
-        self.base_speed = 600
+        self.base_speed = 300
+        self.lang = "en"
 
     # ---- control --------------------------------------------------------------------------
     def stop(self):
@@ -74,7 +109,7 @@ class Executor:
 
     def run(self, plan: dict) -> bool:
         """Execute every action; on failure say why (in the plan's language) and shake 'no'."""
-        lang = plan.get("language", "en")
+        lang = self.lang = plan.get("language", "en")
         with self.busy:
             self.stop_event.clear()
             try:
@@ -126,14 +161,28 @@ class Executor:
             self.go_pose("give")
             self.arm.move_deg({"gripper": 100}, timeout=3)
         elif kind in ("pick", "push", "point"):
-            target = self._search_and_align(a["target"])
-            if target is None:
-                return "notfound"
-            if kind == "point":
-                return None
-            if kind == "pick":
-                return self._pick(target)
-            return self._push(target, a["direction"] or "forward")
+            # a pick that misses tries again: look wider (camera tilted up/down, base further round),
+            # re-align and reach again, until it holds the object or runs out of attempts
+            attempts = PICK_ATTEMPTS if kind == "pick" else 1
+            problem = "notfound"
+            for attempt in range(attempts):
+                self._check()
+                if attempt:
+                    self.log(f"{kind} attempt {attempt} failed ({problem}); trying again")
+                    self.say(fail_text("retry", self.lang), self.lang)
+                pose = "overview" if kind == "pick" else "look_table"
+                target = self._search_and_align(a["target"], wide=attempt > 0, pose=pose)
+                if target is None:
+                    problem = "notfound"
+                    continue
+                if kind == "point":
+                    return None
+                if kind == "push":
+                    return self._push(target, a["direction"] or "forward")
+                problem = self._side_pick(a["target"])
+                if problem is None:
+                    return None
+            return problem
         return None
 
     def go_pose(self, name: str):
@@ -174,14 +223,21 @@ class Executor:
             self.arm.set_speed(old_speed)
 
     # ---- vision-guided --------------------------------------------------------------------
-    def _search_and_align(self, description: str):
-        self.go_pose("look_table")
-        start_pan = self.arm.degrees()["shoulder_pan"]
+    def _search_and_align(self, description: str, wide: bool = False, pose: str = "look_table"):
+        self.go_pose(pose)
+        start_pan = 0.0 if wide else self.arm.degrees()["shoulder_pan"]
+        look = self.poses[pose]["wrist_flex"]
         target = None
-        for offset in SCAN:
-            self._check()
-            self.arm.move_deg({"shoulder_pan": start_pan + offset})
-            target = vision.find(self.camera, description, after=time.time())
+        # first pass: the camera as posed; a retry also tilts it nearer/further and turns the base further
+        tilts = (0, -20, -40) if wide else (0,)  # the overview wrist is already near its down limit
+        for tilt in tilts:
+            self.arm.move_deg({"wrist_flex": look + tilt})
+            for offset in SCAN_WIDE if wide else SCAN:
+                self._check()
+                self.arm.move_deg({"shoulder_pan": start_pan + offset})
+                target = vision.find(self.camera, description, after=time.time())
+                if target:
+                    break
             if target:
                 break
         if not target:
@@ -241,11 +297,79 @@ class Executor:
             return "notfound"
         self.arm.move_deg({"gripper": 0}, timeout=3)
         time.sleep(0.3)
+        d = self.arm.degrees()
         if not self.arm.gripper_contact():
             self.arm.move_deg({"gripper": 100}, timeout=3)
+            self.arm.move_deg({"shoulder_lift": d["shoulder_lift"] - 15}, timeout=10)  # back off to look again
             return "nograb"
-        d = self.arm.degrees()
         self.arm.move_deg({"shoulder_lift": d["shoulder_lift"] - 20}, timeout=10)  # lift it off the table
+        self._check()
+        self.go_pose("up")  # then all the way up, still holding it
+        return None
+
+    def _level_to(self, x: float, z: float, steps: int = 1):
+        """Move the wrist to (x, z) with the gripper level, in straight-line waypoints from where it is."""
+        d = self.arm.degrees()
+        s, e = math.radians(d["shoulder_lift"]), math.radians(d["elbow_flex"])
+        # forward kinematics of the current pose (forearm angle from vertical = s + 90 deg - e)
+        x0 = L1 * math.sin(s) + L2 * math.sin(s + math.pi / 2 - e)
+        z0 = L1 * math.cos(s) + L2 * math.cos(s + math.pi / 2 - e)
+        for k in range(1, steps + 1):
+            self._check()
+            f = k / steps
+            self.arm.move_deg(level_ik(x0 + (x - x0) * f, z0 + (z - z0) * f), timeout=10)
+
+    def _side_pick(self, description: str) -> str | None:
+        """Come down beside the object with the gripper level and open, creep towards it keeping it centred,
+        close, and lift it straight up (level, so a cup stays upright). Base already aligned from above."""
+        x, z = SIDE_X0, GRAB_Z
+        self.arm.move_deg({"gripper": 100}, timeout=3)
+        try:
+            self._level_to(x, z, steps=4)  # down from the overview in a straight line, not a swing
+            target = vision.find(self.camera, description, after=time.time())
+            if target is None:  # lost it coming down: tip the camera down, then up, and fix the height
+                level = self.arm.degrees()["wrist_flex"]
+                for tilt, dz in ((15, -0.02), (-15, 0.02)):
+                    self.arm.move_deg({"wrist_flex": level + tilt})
+                    target = vision.find(self.camera, description, after=time.time())
+                    if target:
+                        z = max(GRAB_Z - 0.03, min(GRAB_Z + 0.06, z + dz))
+                        break
+                self._level_to(x, z)
+            if target is None:
+                return "notfound"
+            while True:
+                self._check()
+                if target.box["w"] >= CLOSE_W or x >= SIDE_X_MAX or not reachable(x + SIDE_STEP, z):
+                    break
+                # aim: base for left/right, height for up/down (the shoulder height above is an estimate)
+                err = target.box["x"] - 0.5
+                if abs(err) > ALIGN_TOL:
+                    pan = self.arm.degrees()["shoulder_pan"]
+                    self.arm.move_deg({"shoulder_pan": pan - self.pan_sign * err * CAMERA_HFOV * 0.6})
+                dy = target.box["y"] - AIM_Y
+                if abs(dy) > 0.12:
+                    z = max(GRAB_Z - 0.03, min(GRAB_Z + 0.06, z - 0.01 * (1 if dy > 0 else -1)))
+                x += SIDE_STEP
+                self._level_to(x, z)
+                if not self._refresh(target, description):
+                    break  # too close for the camera to see it whole: close on what is there
+            if reachable(x + SIDE_STEP, z):  # one more step so the object sits deep between the jaws
+                x += SIDE_STEP
+                self._level_to(x, z)
+        except Contact as c:
+            self.log(f"side pick touched something ({c}); closing where it is")
+        # level with roll 0 the jaws open up/down; turn the wrist so they close on the object's sides
+        roll = self.arm.degrees()["wrist_roll"]
+        self.arm.move_deg({"wrist_roll": roll + GRAB_ROLL}, timeout=4)
+        self.arm.move_deg({"gripper": 0}, timeout=3)
+        time.sleep(0.3)
+        if not self.arm.gripper_contact():
+            self.arm.move_deg({"gripper": 100}, timeout=3)
+            self._level_to(SIDE_X0, GRAB_Z + 0.05)  # back away and up, then look again from above
+            return "nograb"
+        self._level_to(x, z + 0.05)  # off the table first
+        self._level_to(min(x, 0.12), LIFT_Z, steps=3)  # then all the way up, still level
         return None
 
     def _push(self, target, direction: str) -> str | None:
