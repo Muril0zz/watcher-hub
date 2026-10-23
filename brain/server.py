@@ -160,6 +160,7 @@ def spot():
             executor._level_to(x, z, steps=2)
             arm.move_deg({"wrist_roll": GRAB_ROLL}, timeout=4)
             executor.cup_pan = 0
+            executor.at_spot = True
             log("at the cup spot: place the cup between the jaws")
         except ArmError as e:
             log(f"arm error: {e}")

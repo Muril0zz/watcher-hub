@@ -104,6 +104,7 @@ class Executor:
         self.lang = "en"
         # demo: base angle where the cup stands now (0 = the spot in front); survives a restart via the env
         self.cup_pan = float(os.environ.get("BRAIN_CUP_PAN", "0"))
+        self.at_spot = os.environ.get("BRAIN_AT_SPOT") == "1"  # open jaws already around the cup (POST /spot)
 
     # ---- control --------------------------------------------------------------------------
     def stop(self):
@@ -411,20 +412,26 @@ class Executor:
         it, turn the wrist, grip gently, lift, swing the base to the other spot, set it down there, let go,
         and come back up to the middle. direction "back" returns it to the spot in front."""
         x, z = CUP_SPOT
-        self.cup_pan = self._where_is_cup()  # trust the camera, not memory: grabs can miss, people move it
+        ready = self.at_spot  # /spot left the open jaws around the cup: grab right there
+        self.at_spot = False
+        if not self.arm.torque:
+            self.arm.enable()  # hold exactly where it is
+        if not ready:
+            self.cup_pan = self._where_is_cup()  # trust the camera, not memory: grabs can miss, people move it
         if direction == "back":
             to_pan = 0
         else:
             to_pan = RELOCATE_PAN if direction != "right" else -RELOCATE_PAN
         if to_pan == self.cup_pan:  # already there: carry it to the other side instead
             to_pan = 0 if self.cup_pan else RELOCATE_PAN
-        self.arm.move_deg({"wrist_roll": 0})
-        self.arm.move_deg({"shoulder_pan": self.cup_pan}, timeout=10)
-        self.arm.move_deg({"gripper": 100}, timeout=3)
-        self._level_to(x, z + 0.08, steps=3)  # above the spot, level
-        self._level_to(x, z, steps=2)  # straight down beside the cup
-        for r in (-30, -60, GRAB_ROLL):  # the safe way, in steps
-            self.arm.move_deg({"wrist_roll": r}, timeout=3)
+        if not ready:
+            self.arm.move_deg({"wrist_roll": 0})
+            self.arm.move_deg({"shoulder_pan": self.cup_pan}, timeout=10)
+            self.arm.move_deg({"gripper": 100}, timeout=3)
+            self._level_to(x, z + 0.08, steps=3)  # above the spot, level
+            self._level_to(x, z, steps=2)  # straight down beside the cup
+            for r in (-30, -60, GRAB_ROLL):  # the safe way, in steps
+                self.arm.move_deg({"wrist_roll": r}, timeout=3)
         self.arm.grip_to(CUP_GRIP_STEPS)  # the cup's own width: same gentle squeeze going and coming back
         # holding the cup stops the jaws short of that width; closing on air reaches it
         if self.arm.positions()["gripper"] < CUP_GRIP_STEPS + 10:
