@@ -40,7 +40,7 @@ TORQUE_LIMITS = {"shoulder_pan": 500, "shoulder_lift": 650, "elbow_flex": 550, "
                  "wrist_roll": 400, "gripper": 400}
 # Gentle grip: on the paper cup the load went from ~10% (closing freely) to 16% at first touch, then it
 # kept closing to 27-35% and crushed the rim. Stop at first touch and squeeze only ~1.5 deg more.
-GRIP_TORQUE, GRIP_CONTACT_LOAD, GRIP_SQUEEZE = 300, 170, 15
+GRIP_TORQUE, GRIP_CONTACT_LOAD, GRIP_SQUEEZE = 350, 170, 40  # 15 let the cup slip out lifting
 CONTACT_FRACTION = 0.8  # load at this fraction of the joint's torque limit = touching something
 BACK_OFF_STEPS = 70  # ~6 degrees away from whatever it touched
 # Joints kept limp and never commanded (e.g. BRAIN_DISABLED_JOINTS=elbow_flex for a dead servo; the old
