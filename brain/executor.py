@@ -37,7 +37,7 @@ GRAB_Z = 0.045 - SHOULDER_H  # jaws ~4.5 cm above the table
 SIDE_X0, SIDE_X_MAX, SIDE_STEP = 0.10, 0.21, 0.015  # 0.21: shoulder ~75 deg, inside its limit
 LIFT_Z = 0.15  # "all the way up", still level so a cup stays upright
 CLOSE_W = 0.5  # object this wide in the image = between the jaws
-GRAB_ROLL = 90  # wrist turn just before closing, so the jaws close sideways on a cup
+GRAB_ROLL = -90  # wrist turn before closing so the jaws close sideways; + winds the wrist cable and resets servo 5
 AIM_Y = 0.62  # the jaws close on what sits a bit below the image centre
 SCAN = (0, 25, -25, 45, -45)
 SCAN_WIDE = (0, 30, -30, 60, -60, 85, -85)
@@ -206,19 +206,20 @@ class Executor:
         old_speed = self.arm.speed
         self.arm.set_speed(1200)
         try:
+            # no wrist roll in gestures: turning it the + way winds the wrist cable and resets servo 5
             if name == "no":
-                for d in (30, -30, 30, -30, 0):
-                    self.arm.move_deg({"wrist_roll": now["wrist_roll"] + d}, timeout=2)
+                for d in (20, -20, 20, -20, 0):
+                    self.arm.move_deg({"shoulder_pan": now["shoulder_pan"] + d}, timeout=2)
             elif name == "yes":
                 for d in (20, -10, 20, 0):
                     self.arm.move_deg({"wrist_flex": now["wrist_flex"] + d}, timeout=2)
             elif name == "wave":
                 self.arm.move_deg({"gripper": 100}, timeout=2)
-                for d in (40, -40, 40, -40, 0):
-                    self.arm.move_deg({"wrist_roll": now["wrist_roll"] + d}, timeout=2)
+                for d in (30, -30, 30, -30, 0):
+                    self.arm.move_deg({"wrist_flex": now["wrist_flex"] + d}, timeout=2)
             elif name == "dance":
                 for d in (30, -30, 30, 0):
-                    self.arm.move_deg({"shoulder_pan": now["shoulder_pan"] + d, "wrist_roll": now["wrist_roll"] - d}, timeout=3)
+                    self.arm.move_deg({"shoulder_pan": now["shoulder_pan"] + d, "wrist_flex": now["wrist_flex"] - d}, timeout=3)
         finally:
             self.arm.set_speed(old_speed)
 
