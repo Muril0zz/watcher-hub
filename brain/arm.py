@@ -298,7 +298,15 @@ class Arm:
         return self._r2(JOINTS["gripper"], ADDR_POSITION) > RANGES["gripper"][0] + 60
 
     def too_hot(self) -> list[str]:
-        return [j for j, i in JOINTS.items() if j not in DISABLED and self._r1(i, ADDR_TEMP) >= HOT_C]
+        # a single bad read on a busy bus once said "too hot" at 36 C and stopped a cup mid-air: a joint
+        # counts only if three reads in a row agree
+        hot = []
+        for j, i in JOINTS.items():
+            if j in DISABLED:
+                continue
+            if all(self._r1(i, ADDR_TEMP) >= HOT_C for _ in range(3)):
+                hot.append(j)
+        return hot
 
     def close(self):
         self.port.closePort()
