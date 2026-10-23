@@ -38,6 +38,9 @@ if LIMITS_FILE.exists():
 # arm) at full torque stalls a servo, and a stalled servo pulls more than the 12 V / 2 A supply can give.
 TORQUE_LIMITS = {"shoulder_pan": 500, "shoulder_lift": 650, "elbow_flex": 550, "wrist_flex": 450,
                  "wrist_roll": 400, "gripper": 400}
+# Gentle grip: on the paper cup the load went from ~10% (closing freely) to 16% at first touch, then it
+# kept closing to 27-35% and crushed the rim. Stop at first touch and squeeze only ~1.5 deg more.
+GRIP_TORQUE, GRIP_CONTACT_LOAD, GRIP_SQUEEZE = 300, 170, 15
 CONTACT_FRACTION = 0.8  # load at this fraction of the joint's torque limit = touching something
 BACK_OFF_STEPS = 70  # ~6 degrees away from whatever it touched
 # Joints kept limp and never commanded (e.g. BRAIN_DISABLED_JOINTS=elbow_flex for a dead servo; the old
@@ -261,6 +264,22 @@ class Arm:
         if not self.torque_still_on():
             self.torque = False
             raise ArmError("power drop: the motors rebooted (check the 12 V supply)")
+
+    def grip(self, timeout: float = 4.0) -> bool:
+        """Close until the jaws feel the object, then hold just a touch past that point, so a paper cup
+        (about 7.5 cm, four fingers wide) is held, not crushed. True if it is holding something."""
+        i = JOINTS["gripper"]
+        lo, _hi = RANGES["gripper"]
+        self._w2(i, ADDR_TORQUE_LIMIT, GRIP_TORQUE)
+        goal, end = self._r2(i, ADDR_POSITION), time.time() + timeout
+        while goal > lo and time.time() < end:
+            goal = max(lo, goal - 30)
+            self._w2(i, ADDR_GOAL, goal)
+            time.sleep(0.08)
+            if self._load("gripper") >= GRIP_CONTACT_LOAD:  # closing freely is ~10%; touching jumps past 17%
+                self._w2(i, ADDR_GOAL, self._r2(i, ADDR_POSITION) - GRIP_SQUEEZE)
+                return True
+        return self.gripper_contact()
 
     def gripper_contact(self) -> bool:
         """True when the gripper stopped short of closing (it is holding something)."""

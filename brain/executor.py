@@ -363,7 +363,7 @@ class Executor:
         # level with roll 0 the jaws open up/down; turn the wrist so they close on the object's sides
         roll = self.arm.degrees()["wrist_roll"]
         self.arm.move_deg({"wrist_roll": roll + GRAB_ROLL}, timeout=4)
-        self.arm.move_deg({"gripper": 0}, timeout=3)
+        self.arm.grip()  # stops at first touch: holds a paper cup without crushing it
         time.sleep(0.3)
         if not self.arm.gripper_contact():
             self.arm.move_deg({"gripper": 100}, timeout=3)
