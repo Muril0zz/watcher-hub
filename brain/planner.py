@@ -40,8 +40,9 @@ Action vocabulary (use only these; keep plans short, max 8 actions):
 - {"type":"move","joint":"base|shoulder|elbow|wrist_pitch|wrist_roll","value":deg,"relative":true|false}
 - {"type":"gripper","value":0..100}
 - {"type":"gesture","name":"no|yes|wave|dance"}   no = shake the wrist (use it whenever you refuse).
-- {"type":"pick","target":"short visual description of the object"}  look for it, align, reach, grab, lift it
-  all the way up (no extra pose needed after it), retrying up to 3 times.
+- {"type":"pick","target":"short visual description of the object"}  for anything EXCEPT the cup: finds it with
+  the camera, comes over it from above, turns the gripper across it, goes down, grabs and lifts it up high
+  (no extra pose needed after it), retrying up to 3 times. The cup always uses relocate instead.
 - {"type":"push","target":"description","direction":"left|right|forward"}
 - {"type":"point","target":"description"}   turn and point the gripper at it.
 - {"type":"give"}   bring what it holds to the person (delivery spot) and open the gripper.
@@ -186,6 +187,28 @@ def describe(jpeg: bytes, language: str) -> str:
             f"Write it in {LANG_NAMES.get(language, language)}, warm and simple, no lists.")},
     ]
     return _structured(content, DESCRIBE_SCHEMA, max_tokens=400)["reply"]
+
+
+ANGLE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["found", "angle"],
+    "properties": {"found": {"type": "boolean"}, "angle": {"type": "number"}},
+}
+
+
+def long_axis_angle(jpeg: bytes, description: str) -> float | None:
+    """Angle of the object's long side in the image, degrees: 0 = along the image's width, 90 = along its
+    height (counterclockwise). None if not visible. Used to turn the jaws across its narrow side."""
+    content = [
+        _image_block(jpeg),
+        {"type": "text", "text": (
+            f"Robot wrist camera photo looking down. Find: {description}. Give the angle of its LONG side "
+            "in degrees, 0 = parallel to the image's horizontal edge, 90 = parallel to its vertical edge, "
+            "counterclockwise positive (range -90..90). If it is round or square, 0. If not visible, found=false.")},
+    ]
+    out = _structured(content, ANGLE_SCHEMA, max_tokens=256)
+    return out["angle"] if out["found"] else None
 
 
 def locate(jpeg: bytes, description: str) -> dict | None:

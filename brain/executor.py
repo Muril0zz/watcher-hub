@@ -40,6 +40,15 @@ GRAB_Z = 0.045 - SHOULDER_H  # jaws ~4.5 cm above the table
 SIDE_X0, SIDE_X_MAX, SIDE_STEP = 0.10, 0.21, 0.015  # 0.21: shoulder ~75 deg, inside its limit
 LIFT_Z = 0.15  # "all the way up", still level so a cup stays upright
 CLOSE_W = 0.5  # object this wide in the image = between the jaws
+# Top-down pick (anything but the demo cup): hover with the gripper pointing down, centre the object
+# under the jaws by camera, turn the jaws across it, creep down until touching, grip, lift.
+TOP_X0, TOP_X_RANGE = 0.17, (0.11, 0.22)  # wrist distance from the shoulder axis: first guess, limits
+TOP_HOVER_Z = 0.03  # wrist height hovering
+JAW_LEN = 0.10  # wrist pitch axis to jaw tips
+# lowest wrist height: jaw tips ~1.5 cm above the table (estimated). -0.06 pushed the jaws into the table
+TOP_LOW_Z = -0.03  # backstop only (the table height is an estimate); the load rise below is what stops it
+JAW_AIM = (0.5, 0.65)  # where in the image (top-down) the closing jaws meet the table
+CREEP_RISE = 150  # load rise (x0.1 %) over the hovering baseline that means the jaws touched something
 CUP_SPOT = (0.094, -0.062)  # demo: where the cup stands (wrist x, z from the shoulder axis; base at 0)
 # gripper steps for the demo cup (~7.5 cm, four fingers): the jaws first touched the uncrushed cup at 2437;
 # stop ~2 deg past that. Contact-sensing closed too far (40 steps squeezed, more on the way back).
@@ -75,6 +84,13 @@ def level_ik(x: float, z: float) -> dict:
     s = math.degrees(math.atan2(x, z)) - acos((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d))
     e = phi - 90
     return {"shoulder_lift": s, "elbow_flex": e, "wrist_flex": e - s}
+
+
+def down_ik(x: float, z: float) -> dict:
+    """Wrist at (x, z) with the gripper pointing down (as near vertical as this wrist allows, max +63)."""
+    a = level_ik(x, z)
+    a["wrist_flex"] = max(-100.0, min(63.0, 90 - a["shoulder_lift"] + a["elbow_flex"]))
+    return a
 
 
 def reachable(x: float, z: float) -> bool:
@@ -193,7 +209,12 @@ class Executor:
                 if attempt:
                     self.log(f"{kind} attempt {attempt} failed ({problem}); trying again")
                     self.say(fail_text("retry", self.lang), self.lang)
-                pose = "overview" if kind == "pick" else "look_table"
+                if kind == "pick":  # anything but the demo cup (that one is relocate): from above, by camera
+                    problem = self._top_pick(a["target"], wide=attempt > 0)
+                    if problem is None:
+                        return None
+                    continue
+                pose = "look_table"
                 target = self._search_and_align(a["target"], wide=attempt > 0, pose=pose)
                 if target is None:
                     problem = "notfound"
@@ -409,6 +430,111 @@ class Executor:
                 return pan
         self.log(f"cup not seen at either spot; trying the remembered one ({self.cup_pan:.0f})")
         return self.cup_pan
+
+    def _down_to(self, x: float, z: float, steps: int = 1):
+        """Like _level_to, with the gripper pointing down."""
+        d = self.arm.degrees()
+        s, e = math.radians(d["shoulder_lift"]), math.radians(d["elbow_flex"])
+        x0 = L1 * math.sin(s) + L2 * math.sin(s + math.pi / 2 - e)
+        z0 = L1 * math.cos(s) + L2 * math.cos(s + math.pi / 2 - e)
+        for k in range(1, steps + 1):
+            self._check()
+            f = k / steps
+            self.arm.move_deg(down_ik(x0 + (x - x0) * f, z0 + (z - z0) * f), timeout=10)
+
+    def _see(self, description: str):
+        t = vision.find(self.camera, description, after=time.time())
+        return (t.box["x"], t.box["y"]) if t else None
+
+    def _top_pick(self, description: str, wide: bool = False) -> str | None:
+        """Pick anything (not the demo cup) from above, guided by the wrist camera. The camera is mounted
+        turned, so instead of assuming which way the image moves, two small probe moves measure it."""
+        self.arm.move_deg({"wrist_roll": 0, "gripper": 100})
+        self.go_pose("overview")
+        start = self.arm.degrees()["shoulder_pan"] if not wide else 0.0
+        seen = None
+        for off in (SCAN_WIDE if wide else SCAN):
+            self._check()
+            self.arm.move_deg({"shoulder_pan": start + off}, timeout=10)
+            seen = self._see(description)
+            if seen:
+                break
+        if not seen:
+            return "notfound"
+        pan, x, z = self.arm.degrees()["shoulder_pan"], TOP_X0, TOP_HOVER_Z
+        self.log(f"top pick: {description} seen from above, base {pan:.0f}")
+        self._down_to(x, z + 0.04, steps=2)  # come over it from above
+        self._down_to(x, z)
+        p0 = self._see(description)
+        # the downward view is small: if the first guess misses, search a 3 x 3 grid of reach x base angle
+        grid = [(gx, gp) for gx in (TOP_X0, TOP_X_RANGE[0] + 0.01, TOP_X_RANGE[1] - 0.01) for gp in (0, -12, 12)]
+        for gx, gp in grid[1:]:
+            if p0:
+                break
+            self._check()
+            x = gx
+            self.arm.move_deg({"shoulder_pan": pan + gp}, timeout=6)
+            self._down_to(x, z)
+            p0 = self._see(description)
+            if p0:
+                pan += gp
+        if not p0:
+            return "notfound"
+        self.log(f"top pick: under the camera at reach {x:.2f}, base {pan:.0f}")
+        # probes: how the object moves in the image per degree of base and per metre of reach
+        self.arm.move_deg({"shoulder_pan": pan + 6}, timeout=6)
+        p1 = self._see(description)
+        self._down_to(x + 0.02, z)
+        p2 = self._see(description)
+        if not (p1 and p2):
+            return "notfound"
+        j = [[(p1[0] - p0[0]) / 6, (p2[0] - p1[0]) / 0.02], [(p1[1] - p0[1]) / 6, (p2[1] - p1[1]) / 0.02]]
+        det = j[0][0] * j[1][1] - j[0][1] * j[1][0]
+        self.log(f"top pick: image moves per deg/m {j}")
+        if abs(det) < 1e-4:
+            return "notfound"
+        pan, x, cur = pan + 6, x + 0.02, p2
+        for _ in range(4):  # centre it under the jaws
+            ex, ey = JAW_AIM[0] - cur[0], JAW_AIM[1] - cur[1]
+            if math.hypot(ex, ey) < 0.05:
+                break
+            dpan = (j[1][1] * ex - j[0][1] * ey) / det
+            dx = (-j[1][0] * ex + j[0][0] * ey) / det
+            pan += max(-15.0, min(15.0, dpan))
+            x = max(TOP_X_RANGE[0], min(TOP_X_RANGE[1], x + max(-0.04, min(0.04, dx))))
+            self.arm.move_deg({"shoulder_pan": pan}, timeout=6)
+            self._down_to(x, z)
+            cur = self._see(description)
+            if not cur:
+                return "notfound"
+        # turn the jaws (they close along the image's width) across the object's narrow side, safe way only
+        frame = self.camera.latest(newer_than=time.time())
+        angle = planner.long_axis_angle(self.camera.jpeg(frame), description) if frame is not None else None
+        if angle is not None:
+            roll = (angle + 90) % 180 - 180  # same jaw line, expressed in -180..0
+            self.arm.move_deg({"wrist_roll": roll}, timeout=4)
+        try:  # creep down until it touches (the object or the table), never below the jaws-safe height
+            zz = z
+            feel = ("shoulder_lift", "elbow_flex", "wrist_flex")
+            base = {j: self.arm._load(j) for j in feel}  # effort just holding the pose, before touching
+            while zz > TOP_LOW_Z and reachable(x, zz - 0.01):  # far and low runs out of shoulder
+                zz = max(TOP_LOW_Z, zz - 0.01)
+                self._down_to(x, zz)
+                time.sleep(0.15)
+                # the jaws pressing on something shows up as a rise in effort well before anything stalls
+                if any(self.arm._load(j) - base[j] > CREEP_RISE for j in feel):
+                    self.log("top pick: felt the table/object, stopping the descent")
+                    self._down_to(x, zz + 0.01)
+                    break
+        except Contact as c:
+            self.log(f"top pick touched ({c}); gripping here")
+        held = self.arm.grip()
+        self._down_to(x, z)  # lift
+        if not held:
+            self.arm.move_deg({"gripper": 100}, timeout=3)
+            return "nograb"
+        self._level_to(0.12, LIFT_Z, steps=2)  # up high, holding it
+        return None
 
     def _descend_to(self, pan: float):
         """The exact reverse of setting the cup down: carrying height, base round to the spot, wrist turned in
