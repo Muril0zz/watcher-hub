@@ -44,7 +44,8 @@ CUP_SPOT = (0.094, -0.062)  # demo: where the cup stands (wrist x, z from the sh
 # gripper steps for the demo cup (~7.5 cm, four fingers): the jaws first touched the uncrushed cup at 2437;
 # stop ~2 deg past that. Contact-sensing closed too far (40 steps squeezed, more on the way back).
 CUP_GRIP_STEPS = 2415
-RELOCATE_PAN = 70  # how far round the base carries it before setting it down
+RELOCATE_PAN = 70
+CARRY_DZ, PLACE_DZ = 0.10, 0.005  # above CUP_SPOT height: carrying it, and setting it down / picking it up  # how far round the base carries it before setting it down
 GRAB_ROLL = -90  # wrist turn before closing so the jaws close sideways; + winds the wrist cable and resets servo 5
 AIM_Y = 0.62  # the jaws close on what sits a bit below the image centre
 SCAN = (0, 25, -25, 45, -45)
@@ -407,6 +408,17 @@ class Executor:
         self.log(f"cup not seen at either spot; trying the remembered one ({self.cup_pan:.0f})")
         return self.cup_pan
 
+    def _descend_to(self, pan: float):
+        """The exact reverse of setting the cup down: carrying height, base round to the spot, wrist turned in
+        the air, then straight down to the set-down height (turning next to the cup pushed it)."""
+        x, z = CUP_SPOT
+        self.arm.move_deg({"gripper": 100}, timeout=3)
+        self._level_to(x, z + CARRY_DZ, steps=3)
+        self.arm.move_deg({"shoulder_pan": pan}, timeout=10)
+        for r in (-30, -60, GRAB_ROLL):  # the safe way, in steps
+            self.arm.move_deg({"wrist_roll": r}, timeout=3)
+        self._level_to(x, z + PLACE_DZ, steps=2)
+
     def _relocate(self, direction: str) -> str | None:
         """Demo, no camera: the cup stands at the marked spot (base angle self.cup_pan). Come down beside
         it, turn the wrist, grip gently, lift, swing the base to the other spot, set it down there, let go,
@@ -416,35 +428,36 @@ class Executor:
         self.at_spot = False
         if not self.arm.torque:
             self.arm.enable()  # hold exactly where it is
-        if not ready:
-            self.cup_pan = self._where_is_cup()  # trust the camera, not memory: grabs can miss, people move it
+        # No camera check here: the look pose points the jaws down right over the spot and can hit the cup.
+        # Go where memory says; if the jaws close on air, try the other spot before giving up.
+        spots = [self.cup_pan] if ready else [self.cup_pan, 0 if self.cup_pan else RELOCATE_PAN]
+        for i, pan in enumerate(spots):
+            if i or not ready:
+                self._descend_to(pan)
+            self.arm.grip_to(CUP_GRIP_STEPS)  # the cup's own width: same gentle squeeze going and coming back
+            # holding the cup stops the jaws short of that width; closing on air reaches it
+            if self.arm.positions()["gripper"] >= CUP_GRIP_STEPS + 10:
+                self.cup_pan = pan
+                break
+            self.log(f"no cup at the {pan:.0f} deg spot")
+            self.arm.move_deg({"gripper": 100}, timeout=3)
+            self._level_to(x, z + CARRY_DZ, steps=2)
+        else:
+            for r in (-60, -30, 0):
+                self.arm.move_deg({"wrist_roll": r}, timeout=3)
+            return "nograb"
         if direction == "back":
             to_pan = 0
         else:
             to_pan = RELOCATE_PAN if direction != "right" else -RELOCATE_PAN
         if to_pan == self.cup_pan:  # already there: carry it to the other side instead
             to_pan = 0 if self.cup_pan else RELOCATE_PAN
-        if not ready:
-            self.arm.move_deg({"wrist_roll": 0})
-            self.arm.move_deg({"shoulder_pan": self.cup_pan}, timeout=10)
-            self.arm.move_deg({"gripper": 100}, timeout=3)
-            self._level_to(x, z + 0.08, steps=3)  # above the spot, level
-            self._level_to(x, z, steps=2)  # straight down beside the cup
-            for r in (-30, -60, GRAB_ROLL):  # the safe way, in steps
-                self.arm.move_deg({"wrist_roll": r}, timeout=3)
-        self.arm.grip_to(CUP_GRIP_STEPS)  # the cup's own width: same gentle squeeze going and coming back
-        # holding the cup stops the jaws short of that width; closing on air reaches it
-        if self.arm.positions()["gripper"] < CUP_GRIP_STEPS + 10:
-            self.arm.move_deg({"gripper": 100}, timeout=3)
-            self._level_to(x, z + 0.10, steps=2)
-            self.arm.move_deg({"wrist_roll": 0})
-            return "nograb"
-        self._level_to(x, z + 0.10, steps=2)  # lift it
+        self._level_to(x, z + CARRY_DZ, steps=2)  # lift it
         self.arm.move_deg({"shoulder_pan": to_pan}, timeout=10)  # carry it to the other spot
-        self._level_to(x, z + 0.005, steps=2)  # set it down
+        self._level_to(x, z + PLACE_DZ, steps=2)  # set it down
         self.arm.move_deg({"gripper": 100}, timeout=3)  # let go
         self.cup_pan = to_pan  # remember where it is, for "bring it back"
-        self._level_to(x, z + 0.10, steps=2)  # up and out of the cup
+        self._level_to(x, z + CARRY_DZ, steps=2)  # up and out of the cup
         for r in (-60, -30, 0):
             self.arm.move_deg({"wrist_roll": r}, timeout=3)
         self.arm.move_deg({"shoulder_pan": 0}, timeout=10)
