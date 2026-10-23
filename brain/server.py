@@ -168,6 +168,23 @@ def spot():
     return {"ok": True}
 
 
+@app.post("/above")
+def above():
+    """Demo setup: hover right above the front cup spot at carrying height, gripper open (not grabbing)."""
+    def go():
+        try:
+            from executor import CARRY_DZ, CUP_SPOT
+            x, z = CUP_SPOT
+            arm.move_deg({"gripper": 100}, timeout=3)
+            executor._level_to(x, z + CARRY_DZ, steps=2)
+            executor.at_spot = False
+            log("above the cup spot, gripper open")
+        except ArmError as e:
+            log(f"arm error: {e}")
+    threading.Thread(target=go, daemon=True).start()
+    return {"ok": True}
+
+
 @app.post("/teach/{name}")
 def teach(name: str):
     executor.teach_start()
