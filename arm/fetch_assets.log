@@ -1,0 +1,6 @@
+ok   vendor/mediapipe/vision_bundle.mjs
+ok   vendor/mediapipe/wasm/vision_wasm_internal.js
+ok   vendor/mediapipe/wasm/vision_wasm_internal.wasm
+ok   vendor/mediapipe/hand_landmarker.task
+ok   vendor/mediapipe/efficientdet_lite0.tflite
+EXIT 0
