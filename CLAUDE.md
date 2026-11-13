@@ -1,5 +1,7 @@
 # watcher-hub — project context for Claude Code
 
+**Status: ENCERRADO em 2026-11-13** — Hackathon de hardware de Xangai (3º lugar, 21-23/10/2026). Arquivado no GitHub; pasta local removida. Para retomar: clonar o repo e ler este arquivo.
+
 Hackathon project (team of 3): connect a **SenseCAP Watcher**, **Rokid glasses** and a **SO-ARM101** arm to help elderly people in daily life. Specific use case not chosen yet. This repo is the Watcher side: a laptop controls the Watcher and receives its alarms, then forwards them to the other devices.
 
 Approach decided: **code-first**. Control the Watcher over its USB-C serial console; receive alarms by HTTP push over Wi-Fi. No SenseCraft cloud API is used from code, but the SenseCraft cloud is allowed on the device side: tasks can be created by voice (hold the wheel button and describe what to watch for).
